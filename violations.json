@@ -1,0 +1,14 @@
+{
+  "cobcheck_version": "0.1.0",
+  "generated_at": "2026-06-28T17:31:28.284468+00:00",
+  "total_violations": 0,
+  "violations": [],
+  "programs_analysed": [
+    "PROGA",
+    "PROGB",
+    "PROGA",
+    "PROGB"
+  ],
+  "pii_fields_found": 62,
+  "taint_flows": 0
+}
