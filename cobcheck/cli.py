@@ -26,6 +26,7 @@ import sys
 import logging
 import argparse
 from pathlib import Path
+from dotenv import load_dotenv
 
 from .parser.ast_nodes     import CobolProgram
 from .parser.copybook_resolver import CopybookResolver, load_program
@@ -130,6 +131,7 @@ def run_pipeline(
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 def main():
+    load_dotenv()
     parser = argparse.ArgumentParser(
         description="COBCheck — GDPR compliance analyser for COBOL",
         formatter_class=argparse.RawDescriptionHelpFormatter,

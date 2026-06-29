@@ -1,8 +1,207 @@
 {
   "cobcheck_version": "0.1.0",
-  "generated_at": "2026-06-28T17:31:28.284468+00:00",
-  "total_violations": 0,
-  "violations": [],
+  "generated_at": "2026-06-29T21:17:01.476802+00:00",
+  "total_violations": 6,
+  "violations": [
+    {
+      "violation_id": "V-0001",
+      "rule_id": "R1",
+      "gdpr_article": "Art. 32 / 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "name",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 24
+      },
+      "sink": {
+        "kind": "display",
+        "program": "PROGA",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 24,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 61,
+          "stmt": "DisplayStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Mask or encrypt CUST-FIRST-NAME before writing to the display sink in PROGA."
+    },
+    {
+      "violation_id": "V-0002",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6",
+      "severity": "high",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "name",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 24
+      },
+      "sink": {
+        "kind": "display",
+        "program": "PROGA",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 24,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 61,
+          "stmt": "DisplayStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-FIRST-NAME reaches the sink in PROGA."
+    },
+    {
+      "violation_id": "V-0003",
+      "rule_id": "R1",
+      "gdpr_article": "Art. 32 / 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-SSN",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 29
+      },
+      "sink": {
+        "kind": "display",
+        "program": "PROGA",
+        "line": 62
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 29,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 62,
+          "stmt": "DisplayStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Mask or encrypt CUST-SSN before writing to the display sink in PROGA."
+    },
+    {
+      "violation_id": "V-0004",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6",
+      "severity": "high",
+      "pii_field": "CUST-SSN",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 29
+      },
+      "sink": {
+        "kind": "display",
+        "program": "PROGA",
+        "line": 62
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 29,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 62,
+          "stmt": "DisplayStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-SSN reaches the sink in PROGA."
+    },
+    {
+      "violation_id": "V-0005",
+      "rule_id": "R1",
+      "gdpr_article": "Art. 32 / 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-DOB",
+      "pii_category": "date_of_birth",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 30
+      },
+      "sink": {
+        "kind": "display",
+        "program": "PROGA",
+        "line": 63
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 30,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 63,
+          "stmt": "DisplayStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Mask or encrypt CUST-DOB before writing to the display sink in PROGA."
+    },
+    {
+      "violation_id": "V-0006",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6",
+      "severity": "high",
+      "pii_field": "CUST-DOB",
+      "pii_category": "date_of_birth",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 30
+      },
+      "sink": {
+        "kind": "display",
+        "program": "PROGA",
+        "line": 63
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 30,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 63,
+          "stmt": "DisplayStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-DOB reaches the sink in PROGA."
+    }
+  ],
   "programs_analysed": [
     "PROGA",
     "PROGB",
@@ -10,5 +209,5 @@
     "PROGB"
   ],
   "pii_fields_found": 62,
-  "taint_flows": 0
+  "taint_flows": 8
 }
