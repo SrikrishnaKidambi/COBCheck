@@ -59,9 +59,9 @@ class Violation:
 
 RuleFunction = Callable[[TaintFlow], Optional[Violation]]
 
-_LOG_DISPLAY_SINKS = {SinkKind.LOG, SinkKind.DISPLAY, SinkKind.PRINT}
-_AT_REST_SINKS     = {SinkKind.FILE}
-_EXTERNAL_SINKS    = {SinkKind.EXTERNAL}
+_LOG_DISPLAY_SINKS = {SinkKind.LOGGING}
+_AT_REST_SINKS     = {SinkKind.FILE_STORAGE, SinkKind.DATABASE}
+_EXTERNAL_SINKS    = {SinkKind.NETWORK_TRANSFER, SinkKind.CONTENT_OR_SERVICE, SinkKind.MESSAGING}
 
 
 def rule_R1(flow: TaintFlow) -> Optional[Violation]:

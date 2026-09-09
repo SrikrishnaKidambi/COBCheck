@@ -1,7 +1,7 @@
 {
   "cobcheck_version": "0.1.0",
-  "generated_at": "2026-06-29T21:17:01.476802+00:00",
-  "total_violations": 6,
+  "generated_at": "2026-09-09T09:29:22.376931+00:00",
+  "total_violations": 14,
   "violations": [
     {
       "violation_id": "V-0001",
@@ -9,18 +9,23 @@
       "gdpr_article": "Art. 32 / 5(1)(f)",
       "severity": "high",
       "pii_field": "CUST-FIRST-NAME",
-      "pii_category": "name",
+      "pii_category": "identifier",
       "source": {
         "program": "PROGA",
         "copybook": "",
-        "line": 24
+        "line": 27
       },
       "sink": {
-        "kind": "display",
+        "kind": "logging",
         "program": "PROGA",
         "line": 61
       },
       "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 27,
+          "stmt": "DataItem"
+        },
         {
           "program": "PROGA",
           "line": 24,
@@ -34,7 +39,7 @@
       ],
       "sanitised": false,
       "consent_checked": false,
-      "remediation": "Mask or encrypt CUST-FIRST-NAME before writing to the display sink in PROGA."
+      "remediation": "Mask or encrypt CUST-FIRST-NAME before writing to the logging sink in PROGA."
     },
     {
       "violation_id": "V-0002",
@@ -42,18 +47,23 @@
       "gdpr_article": "Art. 6",
       "severity": "high",
       "pii_field": "CUST-FIRST-NAME",
-      "pii_category": "name",
+      "pii_category": "identifier",
       "source": {
         "program": "PROGA",
         "copybook": "",
-        "line": 24
+        "line": 27
       },
       "sink": {
-        "kind": "display",
+        "kind": "logging",
         "program": "PROGA",
         "line": 61
       },
       "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 27,
+          "stmt": "DataItem"
+        },
         {
           "program": "PROGA",
           "line": 24,
@@ -74,6 +84,72 @@
       "rule_id": "R1",
       "gdpr_article": "Art. 32 / 5(1)(f)",
       "severity": "high",
+      "pii_field": "WS-DISPLAY-LINE",
+      "pii_category": "identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 24
+      },
+      "sink": {
+        "kind": "logging",
+        "program": "PROGA",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 24,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 61,
+          "stmt": "DisplayStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Mask or encrypt WS-DISPLAY-LINE before writing to the logging sink in PROGA."
+    },
+    {
+      "violation_id": "V-0004",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6",
+      "severity": "high",
+      "pii_field": "WS-DISPLAY-LINE",
+      "pii_category": "identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 24
+      },
+      "sink": {
+        "kind": "logging",
+        "program": "PROGA",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 24,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 61,
+          "stmt": "DisplayStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before WS-DISPLAY-LINE reaches the sink in PROGA."
+    },
+    {
+      "violation_id": "V-0005",
+      "rule_id": "R1",
+      "gdpr_article": "Art. 32 / 5(1)(f)",
+      "severity": "high",
       "pii_field": "CUST-SSN",
       "pii_category": "national_id",
       "source": {
@@ -82,7 +158,7 @@
         "line": 29
       },
       "sink": {
-        "kind": "display",
+        "kind": "logging",
         "program": "PROGA",
         "line": 62
       },
@@ -100,10 +176,10 @@
       ],
       "sanitised": false,
       "consent_checked": false,
-      "remediation": "Mask or encrypt CUST-SSN before writing to the display sink in PROGA."
+      "remediation": "Mask or encrypt CUST-SSN before writing to the logging sink in PROGA."
     },
     {
-      "violation_id": "V-0004",
+      "violation_id": "V-0006",
       "rule_id": "R2",
       "gdpr_article": "Art. 6",
       "severity": "high",
@@ -115,7 +191,7 @@
         "line": 29
       },
       "sink": {
-        "kind": "display",
+        "kind": "logging",
         "program": "PROGA",
         "line": 62
       },
@@ -136,7 +212,7 @@
       "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-SSN reaches the sink in PROGA."
     },
     {
-      "violation_id": "V-0005",
+      "violation_id": "V-0007",
       "rule_id": "R1",
       "gdpr_article": "Art. 32 / 5(1)(f)",
       "severity": "high",
@@ -148,7 +224,7 @@
         "line": 30
       },
       "sink": {
-        "kind": "display",
+        "kind": "logging",
         "program": "PROGA",
         "line": 63
       },
@@ -166,10 +242,10 @@
       ],
       "sanitised": false,
       "consent_checked": false,
-      "remediation": "Mask or encrypt CUST-DOB before writing to the display sink in PROGA."
+      "remediation": "Mask or encrypt CUST-DOB before writing to the logging sink in PROGA."
     },
     {
-      "violation_id": "V-0006",
+      "violation_id": "V-0008",
       "rule_id": "R2",
       "gdpr_article": "Art. 6",
       "severity": "high",
@@ -181,7 +257,7 @@
         "line": 30
       },
       "sink": {
-        "kind": "display",
+        "kind": "logging",
         "program": "PROGA",
         "line": 63
       },
@@ -200,6 +276,204 @@
       "sanitised": false,
       "consent_checked": false,
       "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-DOB reaches the sink in PROGA."
+    },
+    {
+      "violation_id": "V-0009",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6",
+      "severity": "high",
+      "pii_field": "WS-AUDIT-REC",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 20
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGA",
+        "line": 69
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 20,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 69,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before WS-AUDIT-REC reaches the sink in PROGA."
+    },
+    {
+      "violation_id": "V-0010",
+      "rule_id": "R4",
+      "gdpr_article": "Art. 32",
+      "severity": "high",
+      "pii_field": "WS-AUDIT-REC",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 20
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGA",
+        "line": 69
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 20,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 69,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "WS-AUDIT-REC is written to persistent storage in PROGA without encryption. Apply AES-256 or equivalent before the WRITE, or store only a pseudonymous key."
+    },
+    {
+      "violation_id": "V-0011",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6",
+      "severity": "high",
+      "pii_field": "ARCHIVE-REC",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGB",
+        "copybook": "",
+        "line": 15
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGB",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGB",
+          "line": 15,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 61,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before ARCHIVE-REC reaches the sink in PROGB."
+    },
+    {
+      "violation_id": "V-0012",
+      "rule_id": "R4",
+      "gdpr_article": "Art. 32",
+      "severity": "high",
+      "pii_field": "ARCHIVE-REC",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGB",
+        "copybook": "",
+        "line": 15
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGB",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGB",
+          "line": 15,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 61,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "ARCHIVE-REC is written to persistent storage in PROGB without encryption. Apply AES-256 or equivalent before the WRITE, or store only a pseudonymous key."
+    },
+    {
+      "violation_id": "V-0013",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6",
+      "severity": "high",
+      "pii_field": "EXPORT-REC",
+      "pii_category": "financial",
+      "source": {
+        "program": "PROGB",
+        "copybook": "",
+        "line": 21
+      },
+      "sink": {
+        "kind": "network_transfer",
+        "program": "PROGB",
+        "line": 67
+      },
+      "flow_path": [
+        {
+          "program": "PROGB",
+          "line": 21,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 67,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before EXPORT-REC reaches the sink in PROGB."
+    },
+    {
+      "violation_id": "V-0014",
+      "rule_id": "R3",
+      "gdpr_article": "Art. 44–49",
+      "severity": "critical",
+      "pii_field": "EXPORT-REC",
+      "pii_category": "financial",
+      "source": {
+        "program": "PROGB",
+        "copybook": "",
+        "line": 21
+      },
+      "sink": {
+        "kind": "network_transfer",
+        "program": "PROGB",
+        "line": 67
+      },
+      "flow_path": [
+        {
+          "program": "PROGB",
+          "line": 21,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 67,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "EXPORT-REC is transferred externally from PROGB. Ensure an adequacy decision, SCCs, or BCRs are in place. Consider pseudonymisation before the transfer."
     }
   ],
   "programs_analysed": [
@@ -208,6 +482,6 @@
     "PROGA",
     "PROGB"
   ],
-  "pii_fields_found": 62,
-  "taint_flows": 8
+  "pii_fields_found": 86,
+  "taint_flows": 14
 }

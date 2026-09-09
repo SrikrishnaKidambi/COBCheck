@@ -29,7 +29,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .parser.ast_nodes     import CobolProgram
-from .parser.copybook_resolver import CopybookResolver, load_program
+from .parser.copybook_resolver import CopybookResolver, load_program_resolved
 from .cpg.builder           import CPGBuilder
 from .pii.tagger            import PiiTagger
 from .taint.engine          import TaintEngine
@@ -77,7 +77,7 @@ def run_pipeline(
     for cbl_path in cbl_files:
         logger.info("Parsing %s", cbl_path.name)
         try:
-            prog = load_program(str(cbl_path))
+            prog = load_program_resolved(str(cbl_path), resolver)
             programs.append(prog)
         except Exception as exc:
             logger.warning("Failed to parse %s: %s", cbl_path.name, exc)

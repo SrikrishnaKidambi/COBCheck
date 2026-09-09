@@ -1,317 +1,888 @@
 """
 cobcheck/pii/tagger.py
-───────────────────────
-Tags DATA_ITEM nodes in the CPG as PII sources.
+──────────────────────
 
-Three-stage pipeline (run in order, short-circuit on first match):
+Tags DATA_ITEM nodes in the CPG as potential personal-data sources.
 
-  Stage 1 — Name heuristics
-      Field name contains a known PII keyword: SSN, NAME, DOB, BIRTH,
-      ADDR, ACCT, CARD, PAN, EMAIL, PHONE, POLICY, CLAIM, etc.
+Pipeline:
 
-  Stage 2 — PIC heuristics
-      PIC pattern matches a known PII shape even when the name is cryptic:
-      e.g.  9(09) on a field named CUST-ID  →  SSN-shaped
-            X(16) on a field named TOKEN    →  card-number-shaped
+    Stage 1 — Deterministic detection
+        1. Privado YAML rules, when available.
+        2. COBOL-adapted Privado semantic categories.
+        3. COBOL-specific name heuristics.
+        4. PIC-based evidence.
 
-  Stage 3 — Groq LLM fallback
-      Only for fields that pass stages 1 & 2 without a decision AND whose
-      name gives no clue.  We pass the field name + surrounding context
-      and ask for a yes/no.  Rate-limited to avoid burning quota on obvious
-      non-PII fields.
+    Stage 2 — Context analysis
+        Uses nearby declarations and connected CPG nodes to identify
+        ambiguous fields through deterministic contextual evidence.
 
-The tagger writes back into the CPG:
-    cpg.G.nodes[nid]["pii_fields"].add(field_name)
-    cpg.G.nodes[nid]["pii_category"] = PiiCategory.<X>
+    Stage 3 — Groq LLM fallback
+        Used only when stages 1 and 2 cannot make a decision.
 
-Usage
-─────
-    tagger = PiiTagger(groq_api_key="gsk_...", model="llama3-8b-8192")
-    tagger.tag(cpg)
+The tagger records the detection method and metadata in the CPG so that
+results can later be evaluated and explained in research experiments.
 """
 
 from __future__ import annotations
 
-import re
-import os
-import logging
+from collections import Counter
 from enum import Enum, auto
 from typing import Optional
+import logging
+import os
+import re
 
 from ..cpg.graph_model import CPG, NodeKind
+from .privado_rules import (
+    PrivadoMatch,
+    match_privado_source,
+    normalize_identifier,
+)
 
 logger = logging.getLogger(__name__)
 
 
-# ─── PII categories (used in violation reports) ───────────────────────────────
+# ─── PII categories ──────────────────────────────────────────────────────────
 
 class PiiCategory(Enum):
-    NATIONAL_ID    = auto()   # SSN, TIN, NI number
-    FINANCIAL      = auto()   # card number, account, IBAN
-    NAME           = auto()   # first/last/full name
-    CONTACT        = auto()   # email, phone, address
-    HEALTH         = auto()   # diagnosis, DOB, medical record
-    DATE_OF_BIRTH  = auto()
-    LOCATION       = auto()
-    IDENTIFIER     = auto()   # generic customer/policy/claim ID
-    UNKNOWN_PII    = auto()   # LLM fallback said yes but we don't know the subtype
+    ACCOUNT = auto()
+    AUDIO_VISUAL_SENSORY = auto()
+    BACKGROUND_CHECK = auto()
+    BIOMETRIC = auto()
+    CONTACT = auto()
+    EDUCATION = auto()
+    FINANCIAL = auto()
+    HEALTH = auto()
+    LOCATION = auto()
+    NATIONAL_ID = auto()
+    ONLINE_IDENTIFIER = auto()
+    PERSONAL_CHARACTERISTICS = auto()
+    IDENTIFIER = auto()
+    EMPLOYMENT = auto()
+    PURCHASE = auto()
+    SOCIAL_MEDIA = auto()
+    FAMILY = auto()
+    TECHNICAL = auto()
+    USAGE = auto()
+    USER_CONTENT = auto()
+    VEHICLE = auto()
+    WORKPLACE_MONITORING = auto()
+    DATE_OF_BIRTH = auto()
+    UNKNOWN_PII = auto()
 
 
-# ─── Stage 1: name heuristics ────────────────────────────────────────────────
+# ─── Privado category mapping ────────────────────────────────────────────────
 
-# (pattern, category) — checked left-to-right, first match wins
-_NAME_RULES: list[tuple[re.Pattern, PiiCategory]] = [
-    (re.compile(r"\bSSN\b|\bSIN\b|\bNIN\b|\bTIN\b|\bTFN\b"), PiiCategory.NATIONAL_ID),
-    (re.compile(r"\bCARD\b|\bCCN\b|\bPAN\b|\bIBAN\b|\bBIC\b"), PiiCategory.FINANCIAL),
-    (re.compile(r"\bACCT\b|\bACCOUNT\b"), PiiCategory.FINANCIAL),
-    (re.compile(r"\bDOB\b|\bBIRTH\b|\bBDAY\b"), PiiCategory.DATE_OF_BIRTH),
-    (re.compile(r"\bNAME\b|\bFNAME\b|\bLNAME\b|\bMNAME\b|\bSURNAME\b"), PiiCategory.NAME),
-    (re.compile(r"\bEMAIL\b|\bMAIL\b"), PiiCategory.CONTACT),
-    (re.compile(r"\bPHONE\b|\bMOBILE\b|\bFAX\b|\bTEL\b"), PiiCategory.CONTACT),
-    (re.compile(r"\bADDR\b|\bSTREET\b|\bZIP\b|\bPOSTAL\b|\bCITY\b"), PiiCategory.CONTACT),
-    (re.compile(r"\bDIAG\b|\bMED\b|\bPATIENT\b|\bCLINIC\b|\bRX\b"), PiiCategory.HEALTH),
-    (re.compile(r"\bPOLICY\b|\bCLAIM\b|\bMEMBER\b|\bSUBSCR\b"), PiiCategory.IDENTIFIER),
-    (re.compile(r"\bCUST\b|\bCLIENT\b|\bPERSON\b|\bINDIV\b"), PiiCategory.IDENTIFIER),
-    (re.compile(r"\bGPS\b|\bLAT\b|\bLONG\b|\bLOCATION\b|\bGEO\b"), PiiCategory.LOCATION),
-]
+_PRIVADO_CATEGORY_MAP = {
+    "ACCOUNT DATA": PiiCategory.ACCOUNT,
+    "AUDIO VISUAL SENSORY DATA": PiiCategory.AUDIO_VISUAL_SENSORY,
+    "BACKGROUND CHECK DATA": PiiCategory.BACKGROUND_CHECK,
+    "BIOMETRIC DATA": PiiCategory.BIOMETRIC,
+    "CONTACT DATA": PiiCategory.CONTACT,
+    "EDUCATION BACKGROUND DATA": PiiCategory.EDUCATION,
+    "FINANCIAL DATA": PiiCategory.FINANCIAL,
+    "HEALTH DATA": PiiCategory.HEALTH,
+    "LOCATION DATA": PiiCategory.LOCATION,
+    "NATIONAL IDENTIFICATION NUMBERS": PiiCategory.NATIONAL_ID,
+    "ONLINE IDENTIFIERS": PiiCategory.ONLINE_IDENTIFIER,
+    "PERSONAL CHARACTERISTICS": PiiCategory.PERSONAL_CHARACTERISTICS,
+    "PERSONAL IDENTIFICATION": PiiCategory.IDENTIFIER,
+    "PROFESSIONAL EMPLOYMENT BACKGROUND DATA": PiiCategory.EMPLOYMENT,
+    "PURCHASE DATA": PiiCategory.PURCHASE,
+    "SOCIAL MEDIA DATA": PiiCategory.SOCIAL_MEDIA,
+    "SPOUSE FAMILY DEPENDEND DATA": PiiCategory.FAMILY,
+    "TECHNICAL DATA": PiiCategory.TECHNICAL,
+    "USAGE DATA": PiiCategory.USAGE,
+    "USER CONTENT DATA": PiiCategory.USER_CONTENT,
+    "VEHICLE DATA": PiiCategory.VEHICLE,
+    "WORKPLACE MONITORING DATA": PiiCategory.WORKPLACE_MONITORING,
+}
 
 
-def _check_name_heuristic(field_name: str) -> Optional[PiiCategory]:
-    upper = field_name.upper()
+# ─── Stage 1: supplementary COBOL heuristics ─────────────────────────────────
+
+_NAME_RULES: tuple[
+    tuple[re.Pattern[str], PiiCategory],
+    ...
+] = (
+    (
+        re.compile(
+            r"\b(?:DOB|BIRTH DATE|BIRTHDAY)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.DATE_OF_BIRTH,
+    ),
+    (
+        re.compile(
+            r"\b(?:SSN|SIN|NIN|TIN|TFN|AADHAAR)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.NATIONAL_ID,
+    ),
+    (
+        re.compile(
+            r"\b(?:IBAN|SWIFT|BIC|CVV|CVC|CCN|PAN)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.FINANCIAL,
+    ),
+)
+
+
+def _check_name_heuristic(
+    field_name: str,
+) -> Optional[PiiCategory]:
+
+    normalized = normalize_identifier(
+        field_name
+    )
+
     for pattern, category in _NAME_RULES:
-        if pattern.search(upper):
+
+        if pattern.search(normalized):
             return category
+
     return None
 
 
-# ─── Stage 2: PIC heuristics ─────────────────────────────────────────────────
+# ─── Stage 1: PIC heuristics ─────────────────────────────────────────────────
 
-# PIC strings that are characteristic of specific PII shapes.
-# (pic_pattern, field_name_hint, category)
-_PIC_RULES: list[tuple[re.Pattern, Optional[re.Pattern], PiiCategory]] = [
-    # 9(09) or 9(9) → SSN shape (exactly 9 digits)
-    (re.compile(r"^9\(09\)$|^9{9}$"), None, PiiCategory.NATIONAL_ID),
-    # X(16) or 9(16) → payment card number shape
-    (re.compile(r"^[X9]\(16\)$|^[X9]{16}$"), None, PiiCategory.FINANCIAL),
-    # X(34) → IBAN shape
-    (re.compile(r"^X\(34\)$"), None, PiiCategory.FINANCIAL),
-    # X(10) field named DOB/DATE → date of birth
-    (re.compile(r"^X\(10\)$|^9\(8\)$"),
-     re.compile(r"DOB|DATE|BIRTH|BDAY"),
-     PiiCategory.DATE_OF_BIRTH),
-    # X(25..50) field named NAME/ADDR → name or address string
-    (re.compile(r"^X\((?:2[0-9]|[3-9][0-9]|[1-9][0-9]{2})\)$"),
-     re.compile(r"NAME|ADDR|STREET|EMAIL"),
-     PiiCategory.NAME),
-    # X(10..15) field named PHONE → phone number
-    (re.compile(r"^X\((?:1[0-5]|[7-9])\)$"),
-     re.compile(r"PHONE|TEL|MOBILE|FAX"),
-     PiiCategory.CONTACT),
-]
+_PIC_RULES: tuple[
+    tuple[
+        re.Pattern[str],
+        Optional[re.Pattern[str]],
+        PiiCategory,
+    ],
+    ...
+] = (
+
+    (
+        re.compile(
+            r"^(?:9\(09\)|9{9})$"
+        ),
+        re.compile(
+            r"\b(?:SSN|SIN|NIN|TIN|ID)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.NATIONAL_ID,
+    ),
+
+    (
+        re.compile(
+            r"^(?:X|9)\(16\)$|^[X9]{16}$"
+        ),
+        re.compile(
+            r"\b(?:CARD|PAN|PAYMENT)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.FINANCIAL,
+    ),
+
+    (
+        re.compile(
+            r"^X\(34\)$"
+        ),
+        re.compile(
+            r"\b(?:IBAN|BANK|ACCOUNT)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.FINANCIAL,
+    ),
+
+    (
+        re.compile(
+            r"^(?:X\(10\)|9\(8\))$"
+        ),
+        re.compile(
+            r"\b(?:DOB|DATE|BIRTH)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.DATE_OF_BIRTH,
+    ),
+
+    (
+        re.compile(
+            r"^X\((?:[2-9][0-9]|[1-9][0-9]{2,})\)$"
+        ),
+        re.compile(
+            r"\b(?:NAME|ADDRESS|EMAIL)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.CONTACT,
+    ),
+
+    (
+        re.compile(
+            r"^X\((?:1[0-5]|[7-9])\)$"
+        ),
+        re.compile(
+            r"\b(?:PHONE|TEL|MOBILE|FAX)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.CONTACT,
+    ),
+)
 
 
-def _check_pic_heuristic(field_name: str, picture: str) -> Optional[PiiCategory]:
+def _check_pic_heuristic(
+    field_name: str,
+    picture: str,
+) -> Optional[PiiCategory]:
+
     if not picture:
         return None
-    pic = picture.upper().replace(" ", "")
-    upper_name = field_name.upper()
+
+    pic = (
+        picture.upper()
+        .replace(" ", "")
+    )
+
+    normalized_name = normalize_identifier(
+        field_name
+    )
+
     for pic_pattern, name_hint, category in _PIC_RULES:
-        if pic_pattern.match(pic):
-            if name_hint is None or name_hint.search(upper_name):
-                return category
+
+        if not pic_pattern.fullmatch(pic):
+            continue
+
+        if (
+            name_hint is None
+            or name_hint.search(normalized_name)
+        ):
+            return category
+
     return None
+
+
+# ─── Stage 2: deterministic context analysis ─────────────────────────────────
+
+def _extract_context(
+    cpg: CPG,
+    nid: int,
+    limit: int = 12,
+) -> list[str]:
+    """
+    Extract useful local context from:
+
+    - neighbouring CPG nodes,
+    - nearby DATA_ITEM declarations in the same program,
+    - the current field's program metadata.
+
+    This deliberately does not depend on a particular AST shape.
+    """
+
+    node = cpg.G.nodes[nid]
+
+    context: list[str] = []
+
+    program = str(
+        node.get("program", "")
+    )
+
+    line = node.get("line", 0)
+
+    if program:
+        context.append(
+            f"PROGRAM {program}"
+        )
+
+    # ── Graph neighbours ──────────────────────────────────────────────────
+
+    neighbours = list(
+        cpg.G.predecessors(nid)
+    ) + list(
+        cpg.G.successors(nid)
+    )
+
+    seen: set[int] = set()
+
+    for other_nid in neighbours:
+
+        if other_nid in seen:
+            continue
+
+        seen.add(other_nid)
+
+        other = cpg.G.nodes.get(
+            other_nid,
+            {},
+        )
+
+        stmt = other.get("stmt")
+
+        if stmt is not None:
+
+            name = getattr(
+                stmt,
+                "name",
+                "",
+            )
+
+            if name:
+                context.append(str(name))
+
+        if len(context) >= limit:
+            return context[:limit]
+
+    # ── Nearby declarations ───────────────────────────────────────────────
+
+    candidates: list[
+        tuple[int, str]
+    ] = []
+
+    for other_nid, data in cpg.G.nodes(
+        data=True
+    ):
+
+        if other_nid == nid:
+            continue
+
+        if (
+            data.get("kind")
+            != NodeKind.DATA_ITEM
+        ):
+            continue
+
+        if (
+            program
+            and data.get("program") != program
+        ):
+            continue
+
+        stmt = data.get("stmt")
+
+        if stmt is None:
+            continue
+
+        name = getattr(
+            stmt,
+            "name",
+            "",
+        )
+
+        if not name:
+            continue
+
+        other_line = data.get(
+            "line",
+            0,
+        )
+
+        distance = (
+            abs(other_line - line)
+            if line and other_line
+            else 10_000
+        )
+
+        candidates.append(
+            (distance, str(name))
+        )
+
+    for _, name in sorted(candidates):
+
+        if len(context) >= limit:
+            break
+
+        context.append(name)
+
+    return context[:limit]
+
+
+def _check_context(
+    field_name: str,
+    context_lines: list[str],
+) -> Optional[PiiCategory]:
+    """
+    Classify an ambiguous field using deterministic context.
+
+    The field itself is combined with nearby identifiers and each
+    contextual identifier is checked against the Privado-derived matcher.
+    """
+
+    if not context_lines:
+        return None
+
+    category_votes: Counter[
+        PiiCategory
+    ] = Counter()
+
+    for context in context_lines:
+
+        match = match_privado_source(
+            context
+        )
+
+        if match is None:
+            continue
+
+        category = _category_from_privado(
+            match
+        )
+
+        if category is not None:
+            category_votes[category] += 1
+
+    if not category_votes:
+        return None
+
+    category, votes = (
+        category_votes.most_common(1)[0]
+    )
+
+    # One random nearby declaration is not enough evidence.
+    if votes < 2:
+        return None
+
+    logger.debug(
+        "PII[context] %s -> %s "
+        "(votes=%d)",
+        field_name,
+        category.name,
+        votes,
+    )
+
+    return category
+
+
+# ─── Category conversion ─────────────────────────────────────────────────────
+
+def _category_from_privado(
+    match: PrivadoMatch,
+) -> Optional[PiiCategory]:
+
+    category_name = (
+        match.category
+        .strip()
+        .upper()
+    )
+
+    return _PRIVADO_CATEGORY_MAP.get(
+        category_name
+    )
 
 
 # ─── Stage 3: Groq LLM fallback ──────────────────────────────────────────────
 
-_LLM_SYSTEM_PROMPT = """You are a GDPR compliance expert analysing legacy COBOL data fields.
+_LLM_SYSTEM_PROMPT = """
+You are analysing a legacy COBOL application for GDPR compliance.
 
-Your task: given a COBOL field name and its PIC clause, decide if it is likely to
-hold Personal Identifiable Information (PII) as defined by GDPR Article 4(1).
+Determine whether the COBOL field likely stores personal data under
+GDPR Article 4(1).
 
 Reply with exactly one of:
-  YES <CATEGORY>
-  NO
 
-Where CATEGORY (only when YES) is one of:
-  national_id | financial | name | contact | health | date_of_birth | location | identifier
+YES <CATEGORY>
+NO
 
-Be conservative — if you are not sure, reply NO.
-Do NOT explain your reasoning. Do NOT add any other text."""
+CATEGORY must be one of:
+
+account
+audio_visual_sensory
+background_check
+biometric
+contact
+education
+financial
+health
+location
+national_id
+online_identifier
+personal_characteristics
+identifier
+employment
+purchase
+social_media
+family
+technical
+usage
+user_content
+vehicle
+workplace_monitoring
+date_of_birth
+
+Use surrounding COBOL context as evidence.
+
+Be conservative.
+If evidence is insufficient, reply NO.
+Do not explain your answer.
+""".strip()
+
+
+_LLM_CATEGORY_MAP = {
+    "ACCOUNT": PiiCategory.ACCOUNT,
+    "AUDIO_VISUAL_SENSORY": (
+        PiiCategory.AUDIO_VISUAL_SENSORY
+    ),
+    "BACKGROUND_CHECK": (
+        PiiCategory.BACKGROUND_CHECK
+    ),
+    "BIOMETRIC": PiiCategory.BIOMETRIC,
+    "CONTACT": PiiCategory.CONTACT,
+    "EDUCATION": PiiCategory.EDUCATION,
+    "FINANCIAL": PiiCategory.FINANCIAL,
+    "HEALTH": PiiCategory.HEALTH,
+    "LOCATION": PiiCategory.LOCATION,
+    "NATIONAL_ID": PiiCategory.NATIONAL_ID,
+    "ONLINE_IDENTIFIER": (
+        PiiCategory.ONLINE_IDENTIFIER
+    ),
+    "PERSONAL_CHARACTERISTICS": (
+        PiiCategory.PERSONAL_CHARACTERISTICS
+    ),
+    "IDENTIFIER": PiiCategory.IDENTIFIER,
+    "EMPLOYMENT": PiiCategory.EMPLOYMENT,
+    "PURCHASE": PiiCategory.PURCHASE,
+    "SOCIAL_MEDIA": PiiCategory.SOCIAL_MEDIA,
+    "FAMILY": PiiCategory.FAMILY,
+    "TECHNICAL": PiiCategory.TECHNICAL,
+    "USAGE": PiiCategory.USAGE,
+    "USER_CONTENT": PiiCategory.USER_CONTENT,
+    "VEHICLE": PiiCategory.VEHICLE,
+    "WORKPLACE_MONITORING": (
+        PiiCategory.WORKPLACE_MONITORING
+    ),
+    "DATE_OF_BIRTH": PiiCategory.DATE_OF_BIRTH,
+}
 
 
 def _call_groq_llm(
     field_name: str,
-    picture:    str,
+    picture: str,
     context_lines: list[str],
-    api_key:    str,
-    model:      str,
+    api_key: str,
+    model: str,
 ) -> Optional[PiiCategory]:
-    """
-    Call the Groq API to classify a single ambiguous field.
 
-    Returns a PiiCategory if the LLM says YES, else None.
-    Logs a warning and returns None on API errors.
-    """
     try:
         from groq import Groq  # type: ignore
+
     except ImportError:
-        logger.warning("groq package not installed — skipping LLM fallback")
+
+        logger.warning(
+            "groq package not installed; "
+            "skipping LLM fallback"
+        )
+
         return None
 
-    context = "\n".join(context_lines[:5]) if context_lines else "(no context)"
+    context = (
+        "\n".join(context_lines[:12])
+        if context_lines
+        else "(no context)"
+    )
+
     user_msg = (
         f"Field name: {field_name}\n"
-        f"PIC clause: {picture or '(none)'}\n"
-        f"Surrounding COBOL lines:\n{context}\n\n"
-        "Is this field PII?"
+        f"PIC clause: "
+        f"{picture or '(none)'}\n"
+        f"Relevant COBOL context:\n"
+        f"{context}\n\n"
+        "Is this field personal data?"
     )
 
     try:
-        client = Groq(api_key=api_key)
-        response = client.chat.completions.create(
-            model    = model,
-            messages = [
-                {"role": "system", "content": _LLM_SYSTEM_PROMPT},
-                {"role": "user",   "content": user_msg},
-            ],
-            max_tokens  = 16,
-            temperature = 0.0,
-        )
-        reply = response.choices[0].message.content.strip().upper()
-        logger.debug("Groq reply for %s: %r", field_name, reply)
 
-        if reply.startswith("YES"):
-            parts = reply.split()
-            if len(parts) >= 2:
-                cat_name = parts[1].strip()
-                _MAP = {
-                    "NATIONAL_ID":    PiiCategory.NATIONAL_ID,
-                    "FINANCIAL":      PiiCategory.FINANCIAL,
-                    "NAME":           PiiCategory.NAME,
-                    "CONTACT":        PiiCategory.CONTACT,
-                    "HEALTH":         PiiCategory.HEALTH,
-                    "DATE_OF_BIRTH":  PiiCategory.DATE_OF_BIRTH,
-                    "LOCATION":       PiiCategory.LOCATION,
-                    "IDENTIFIER":     PiiCategory.IDENTIFIER,
-                }
-                return _MAP.get(cat_name, PiiCategory.UNKNOWN_PII)
+        client = Groq(
+            api_key=api_key
+        )
+
+        response = (
+            client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            _LLM_SYSTEM_PROMPT
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": user_msg,
+                    },
+                ],
+                max_tokens=16,
+                temperature=0.0,
+            )
+        )
+
+        reply = (
+            response
+            .choices[0]
+            .message.content
+            .strip()
+            .upper()
+        )
+
+        if not reply.startswith("YES"):
+            return None
+
+        parts = reply.split()
+
+        if len(parts) < 2:
             return PiiCategory.UNKNOWN_PII
-        return None
+
+        return _LLM_CATEGORY_MAP.get(
+            parts[1],
+            PiiCategory.UNKNOWN_PII,
+        )
 
     except Exception as exc:
-        logger.warning("Groq API error for field %s: %s", field_name, exc)
+
+        logger.warning(
+            "Groq API error for %s: %s",
+            field_name,
+            exc,
+        )
+
         return None
 
 
-# ─── Main tagger class ────────────────────────────────────────────────────────
+# ─── Main tagger ─────────────────────────────────────────────────────────────
 
 class PiiTagger:
     """
-    Tags DATA_ITEM nodes in a CPG as PII sources.
+    Classify COBOL DATA_ITEM declarations as personal-data sources.
 
-    Parameters
-    ----------
-    groq_api_key : str | None
-        Groq API key.  If None, stage 3 is disabled.
-    model : str
-        Groq model ID (default: llama3-8b-8192 — fast and cheap).
-    llm_threshold : int
-        Maximum number of LLM calls per analysis run (guard against quota burn).
+    Pipeline:
+
+        Stage 1:
+            Privado + COBOL deterministic detection.
+
+        Stage 2:
+            Deterministic contextual evidence.
+
+        Stage 3:
+            LLM fallback.
     """
 
     def __init__(
         self,
         groq_api_key: Optional[str] = None,
-        model:        str           = "llama3-8b-8192",
-        llm_threshold: int          = 50,
+        model: str = "llama3-8b-8192",
+        llm_threshold: int = 50,
     ):
-        self._api_key      = groq_api_key or os.getenv("GROQ_API_KEY", "")
-        self._model        = model
-        self._llm_limit    = llm_threshold
-        self._llm_calls    = 0
-        self._stats        = {"name": 0, "pic": 0, "llm": 0, "none": 0}
 
-    # ─── Public API ───────────────────────────────────────────────────────────
+        self._api_key = (
+            groq_api_key
+            or os.getenv(
+                "GROQ_API_KEY",
+                "",
+            )
+        )
 
-    def tag(self, cpg: CPG) -> dict[int, PiiCategory]:
-        """
-        Iterate over all DATA_ITEM nodes in *cpg*, classify each, and
-        write results back into the graph.
+        self._model = model
+        self._llm_limit = llm_threshold
+        self._llm_calls = 0
 
-        Returns
-        -------
-        dict[node_id, PiiCategory]
-            All nodes classified as PII, for downstream inspection.
-        """
-        results: dict[int, PiiCategory] = {}
+        self._stats = {
+            "privado": 0,
+            "name": 0,
+            "pic": 0,
+            "context": 0,
+            "llm": 0,
+            "none": 0,
+        }
 
-        for nid, data in cpg.G.nodes(data=True):
-            if data.get("kind") != NodeKind.DATA_ITEM:
+    def tag(
+        self,
+        cpg: CPG,
+    ) -> dict[int, PiiCategory]:
+
+        results: dict[
+            int,
+            PiiCategory,
+        ] = {}
+
+        for nid, data in cpg.G.nodes(
+            data=True
+        ):
+
+            if (
+                data.get("kind")
+                != NodeKind.DATA_ITEM
+            ):
                 continue
 
             stmt = data.get("stmt")
+
             if stmt is None:
                 continue
 
-            field_name = getattr(stmt, "name", "")
-            picture    = getattr(stmt, "picture", "") or ""
+            field_name = (
+                getattr(
+                    stmt,
+                    "name",
+                    "",
+                )
+                or ""
+            )
 
-            category = self._classify(field_name, picture)
-            if category is not None:
-                cpg.tag_pii(nid, field_name)
-                cpg.G.nodes[nid]["pii_category"] = category
-                results[nid] = category
+            picture = (
+                getattr(
+                    stmt,
+                    "picture",
+                    "",
+                )
+                or ""
+            )
+
+            context = _extract_context(
+                cpg,
+                nid,
+            )
+
+            category, detection = (
+                self._classify(
+                    field_name,
+                    picture,
+                    context,
+                )
+            )
+
+            if category is None:
+                continue
+
+            cpg.tag_pii(
+                nid,
+                field_name,
+            )
+
+            node = cpg.G.nodes[nid]
+
+            node["pii_category"] = category
+            node["pii_detection"] = detection
+
+            results[nid] = category
 
         logger.info(
-            "PII tagging complete — name:%d  pic:%d  llm:%d  none:%d",
-            self._stats["name"], self._stats["pic"],
-            self._stats["llm"], self._stats["none"],
+            "PII tagging complete — "
+            "privado:%d name:%d pic:%d "
+            "context:%d llm:%d none:%d",
+            self._stats["privado"],
+            self._stats["name"],
+            self._stats["pic"],
+            self._stats["context"],
+            self._stats["llm"],
+            self._stats["none"],
         )
-        return results
 
-    # ─── Classification pipeline ──────────────────────────────────────────────
+        return results
 
     def _classify(
         self,
         field_name: str,
-        picture:    str,
-        context:    Optional[list[str]] = None,
-    ) -> Optional[PiiCategory]:
+        picture: str,
+        context: list[str],
+    ) -> tuple[
+        Optional[PiiCategory],
+        Optional[str],
+    ]:
 
-        # Stage 1: name heuristics
-        cat = _check_name_heuristic(field_name)
-        if cat is not None:
-            self._stats["name"] += 1
-            logger.debug("PII[name] %s → %s", field_name, cat.name)
-            return cat
+        # ── Stage 1A: Privado-derived rules ──────────────────────────────
 
-        # Stage 2: PIC heuristics
-        cat = _check_pic_heuristic(field_name, picture)
-        if cat is not None:
-            self._stats["pic"] += 1
-            logger.debug("PII[pic] %s %s → %s", field_name, picture, cat.name)
-            return cat
-
-        # Stage 3: LLM fallback (only for truly ambiguous fields)
-        if self._api_key and self._llm_calls < self._llm_limit:
-            self._llm_calls += 1
-            cat = _call_groq_llm(
-                field_name    = field_name,
-                picture       = picture,
-                context_lines = context or [],
-                api_key       = self._api_key,
-                model         = self._model,
+        privado_match = (
+            match_privado_source(
+                field_name
             )
-            if cat is not None:
+        )
+
+        if privado_match is not None:
+
+            category = _category_from_privado(
+                privado_match
+            )
+
+            if category is not None:
+
+                self._stats["privado"] += 1
+
+                return (
+                    category,
+                    privado_match.source,
+                )
+
+        # ── Stage 1B: COBOL name heuristics ──────────────────────────────
+
+        category = _check_name_heuristic(
+            field_name
+        )
+
+        if category is not None:
+
+            self._stats["name"] += 1
+
+            return (
+                category,
+                "cobol_name",
+            )
+
+        # ── Stage 1C: PIC heuristics ─────────────────────────────────────
+
+        category = _check_pic_heuristic(
+            field_name,
+            picture,
+        )
+
+        if category is not None:
+
+            self._stats["pic"] += 1
+
+            return (
+                category,
+                "pic",
+            )
+
+        # ── Stage 2: deterministic context ───────────────────────────────
+
+        category = _check_context(
+            field_name,
+            context,
+        )
+
+        if category is not None:
+
+            self._stats["context"] += 1
+
+            return (
+                category,
+                "context",
+            )
+
+        # ── Stage 3: LLM fallback ────────────────────────────────────────
+
+        if (
+            self._api_key
+            and self._llm_calls
+            < self._llm_limit
+        ):
+
+            self._llm_calls += 1
+
+            category = _call_groq_llm(
+                field_name=field_name,
+                picture=picture,
+                context_lines=context,
+                api_key=self._api_key,
+                model=self._model,
+            )
+
+            if category is not None:
+
                 self._stats["llm"] += 1
-                logger.debug("PII[llm] %s → %s", field_name, cat.name)
-                return cat
+
+                return (
+                    category,
+                    "llm",
+                )
 
         self._stats["none"] += 1
-        return None
 
-    # ─── Diagnostics ──────────────────────────────────────────────────────────
+        return (
+            None,
+            None,
+        )
 
     @property
     def stats(self) -> dict:

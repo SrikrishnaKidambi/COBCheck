@@ -26,14 +26,153 @@ Typical usage
 from __future__ import annotations
 
 import os
+import re
 import logging
+from dataclasses import replace as _replace
 from pathlib import Path
 from typing import Optional
 
-from .ast_nodes  import CobolProgram
+from .ast_nodes  import CobolProgram, CopyStmt, SourceLocation
 from .ast_builder import build_ast
 
 logger = logging.getLogger(__name__)
+
+
+# ─── COPY statement text-level preprocessing ──────────────────────────────────
+#
+# The Cobol85 grammar used here has no rule for a COPY statement — COPY is
+# treated (correctly, per how real compilers work) as a library/preprocessor
+# directive that must be resolved *before* syntax analysis, not during it.
+# Leaving `COPY member.` in the token stream is therefore a hard parse error.
+#
+# So: scan for COPY statements as plain text, splice in the resolved
+# copybook's raw source in place of the COPY line, and only THEN call
+# build_ast on the expanded text. Field nodes from the copybook end up as
+# ordinary DataItems in the consuming program (correctly sectioned, since
+# the splice happens inside whatever SECTION context surrounded the COPY),
+# so nothing downstream needs to treat them specially. We keep a record of
+# where each splice landed so source locations can be corrected back to the
+# real copybook file/line afterwards — reports should cite the copybook,
+# not a synthetic expanded blob.
+#
+# Known limitation: REPLACING clauses are not handled — a COPY ... REPLACING
+# will not match _COPY_STMT_RE and is left as an unresolved marker instead.
+
+_COPY_STMT_RE = re.compile(
+    r'^\s*COPY\s+([A-Za-z0-9\-]+)\s*\.\s*$',
+    re.IGNORECASE,
+)
+
+
+def _inline_copy_statements(
+    source_text:  str,
+    resolver:     "CopybookResolver",
+    from_program: str,
+) -> tuple[str, list[dict], list[str]]:
+    """
+    Replace every (non-REPLACING) COPY statement in *source_text* with the
+    resolved copybook's raw text.
+
+    Returns (expanded_text, splices, unresolved_members) where each splice
+    is {"member", "path", "start_line", "num_lines"} — start_line/num_lines
+    are 1-indexed line ranges *in the returned expanded_text*.
+    """
+    out_lines: list[str] = []
+    splices:   list[dict] = []
+    resolved_members: list[str] = []
+    unresolved_members: list[str] = []
+
+    for line in source_text.splitlines():
+        m = _COPY_STMT_RE.match(line)
+        if not m:
+            out_lines.append(line)
+            continue
+
+        member = m.group(1).upper()
+        path = resolver.resolve(member, from_program)
+        if path is None:
+            unresolved_members.append(member)
+            out_lines.append(f"      *> COBCHECK: UNRESOLVED COPY {member}")
+            continue
+
+        try:
+            cb_text = Path(path).read_text(encoding="latin-1")
+        except Exception as exc:
+            logger.error("Failed to read copybook %s: %s", path, exc)
+            unresolved_members.append(member)
+            out_lines.append(f"      *> COBCHECK: UNREADABLE COPY {member}")
+            continue
+
+        # Drop comment-only lines: this grammar's comment-line recognition
+        # is column-sensitive and several real-world copybooks (including
+        # our own test fixtures) don't reliably match it, causing a parse
+        # error. Comments carry no data-flow information we need, so it's
+        # safe to strip rather than fix column-exact comment lexing.
+        # Original line numbers are kept per kept-line so location
+        # correction below still points at the real line in the copybook
+        # file, not an index into the post-strip list.
+        kept = [
+            (orig_no, ln)
+            for orig_no, ln in enumerate(cb_text.splitlines(), start=1)
+            if not ln.lstrip().startswith("*")
+        ]
+        start_line = len(out_lines) + 1  # 1-indexed line in expanded text
+        out_lines.extend(ln for _, ln in kept)
+        splices.append({
+            "member":       member,
+            "path":         path,
+            "start_line":   start_line,
+            "num_lines":    len(kept),
+            "orig_lines":   [orig_no for orig_no, _ in kept],  # index-aligned
+        })
+        resolved_members.append(member)
+
+    return "\n".join(out_lines), splices, resolved_members + unresolved_members
+
+
+def load_program_resolved(file_path: str, resolver: "CopybookResolver") -> CobolProgram:
+    """
+    Parse *file_path*, inlining COPY statements first (see module docstring
+    above) so the grammar only ever sees plain data-item declarations.
+
+    Fields pulled in from a copybook are tagged `.copybook = <member>` and
+    have their `.loc` corrected to point at the real copybook file and the
+    original line within it, so violation reports still cite true source
+    locations instead of the synthetic expanded text.
+    """
+    from_program = Path(file_path).stem.upper()
+    raw_text = Path(file_path).read_text(encoding="latin-1")
+
+    expanded_text, splices, members = _inline_copy_statements(
+        raw_text, resolver, from_program,
+    )
+
+    program = build_ast(expanded_text, file_path)
+
+    def _patch_location(item) -> None:
+        if item.loc is None:
+            return
+        for sp in splices:
+            lo, hi = sp["start_line"], sp["start_line"] + sp["num_lines"]
+            if lo <= item.loc.line < hi:
+                original_line = sp["orig_lines"][item.loc.line - lo]
+                item.loc = _replace(item.loc, file=sp["path"], line=original_line)
+                item.copybook = sp["member"]
+                return
+
+    for item in program.data_items:
+        _patch_location(item)
+
+    if members:
+        program.copy_stmts = [
+            CopyStmt(
+                member=m,
+                loc=SourceLocation(program=program.program_id, file=file_path, line=0),
+            )
+            for m in members
+        ]
+
+    return program
 
 
 # ─── Known file extensions (tried in order) ───────────────────────────────────

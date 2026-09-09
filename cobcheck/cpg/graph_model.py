@@ -1,88 +1,109 @@
 """
 cobcheck/cpg/graph_model.py
 ────────────────────────────
-CPG (Code Property Graph) data model backed by NetworkX.
+Code Property Graph data model backed by NetworkX.
 
-A CPG unifies three graphs over the same set of nodes:
+The graph combines:
 
-  AST edges  — parent → child in the syntactic tree
-  CFG edges  — control-flow predecessor → successor
-  PDG edges  — data-dependence producer → consumer (def → use)
+    AST       syntactic containment
+    CFG       control-flow relationships
+    PDG       data-dependence relationships
+    CALL      inter-program calls
+    RETURN    inter-program return flow
+    COPYBOOK  shared copybook relationships
+    FILE_IO   shared-file relationships
 
-We add a fourth edge kind:
-
-  CALL edges — call-site node → entry node of the called program
-
-All four live in one NetworkX MultiDiGraph so you can ask cross-cutting
-questions (e.g. "is there a taint path from node A to node B that
-respects control flow?") with standard graph algorithms.
-
-Node attributes (stored in G.nodes[node_id])
-──────────────────────────────────────────────
-  kind        : NodeKind enum
-  stmt        : the AST node (DataItem, MoveStmt, …) — the raw payload
-  program     : program_id string
-  file        : absolute source path
-  line        : source line number
-  pii_fields  : set[str] — PII field names that taint this node (filled by taint engine)
-  is_sink     : bool
-  sink_kind   : SinkKind | None
-  is_sanitiser: bool
-  is_guard    : bool
-
-Edge attributes (stored in G.edges)
-─────────────────────────────────────
-  kind : EdgeKind enum
+Each node can also carry PII taint information and sink metadata.
 """
 
 from __future__ import annotations
 
 from enum import Enum, auto
 from typing import Any, Optional
+
 import networkx as nx
 
 
-# ─── Enumerations ─────────────────────────────────────────────────────────────
+# ─── Node kinds ───────────────────────────────────────────────────────────────
 
 class NodeKind(Enum):
     # Data Division
-    DATA_ITEM   = auto()   # a COBOL data field declaration
-    # Procedure Division statements
-    MOVE        = auto()
-    COMPUTE     = auto()
-    CALL        = auto()
-    WRITE       = auto()
-    READ        = auto()
-    DISPLAY     = auto()
-    IF          = auto()
-    PERFORM     = auto()
-    GENERIC     = auto()
-    # Structural
-    ENTRY       = auto()   # program / paragraph / section entry point
-    EXIT        = auto()   # program / paragraph / section exit
-    # Cross-program
-    CALL_SITE   = auto()   # the CALL statement node (duplicated as CALL_SITE for clarity)
-    FILE_WRITE  = auto()   # PII written to a shared file
-    FILE_READ   = auto()   # PII read from a shared file
+    DATA_ITEM = auto()
 
+    # Ordinary COBOL statements
+    MOVE = auto()
+    COMPUTE = auto()
+    CALL = auto()
+    WRITE = auto()
+    READ = auto()
+    DISPLAY = auto()
+
+    # External / subsystem statements
+    EXEC_SQL = auto()
+    EXEC_SQL_IMS = auto()
+    EXEC_CICS = auto()
+
+    # Control flow
+    IF = auto()
+    PERFORM = auto()
+
+    # Fallback
+    GENERIC = auto()
+
+    # Structural
+    ENTRY = auto()
+    EXIT = auto()
+
+    # Cross-program / storage abstractions
+    CALL_SITE = auto()
+    FILE_WRITE = auto()
+    FILE_READ = auto()
+
+
+# ─── Edge kinds ───────────────────────────────────────────────────────────────
 
 class EdgeKind(Enum):
-    AST      = auto()   # parent → child  (syntactic containment)
-    CFG      = auto()   # predecessor → successor (control flow)
-    PDG      = auto()   # def → use  (data dependence)
-    CALL     = auto()   # call-site → callee entry
-    RETURN   = auto()   # callee exit → call-site (return flow)
-    COPYBOOK = auto()   # program → copybook data item (field sharing via COPY)
-    FILE_IO  = auto()   # FILE_WRITE → FILE_READ (inter-program via shared file)
+    AST = auto()
+    CFG = auto()
+    PDG = auto()
 
+    CALL = auto()
+    RETURN = auto()
+
+    COPYBOOK = auto()
+    FILE_IO = auto()
+
+
+# ─── Sink categories ──────────────────────────────────────────────────────────
 
 class SinkKind(Enum):
-    LOG      = auto()   # WRITE to a log / report file
-    DISPLAY  = auto()   # DISPLAY to terminal / SYSLST
-    PRINT    = auto()   # WRITE to a print file
-    FILE     = auto()   # WRITE to a VSAM / sequential file (at-rest)
-    EXTERNAL = auto()   # EXEC CICS SEND, API call, cross-border transfer
-    UNKNOWN  = auto()
+    """
+    Six sink categories adapted to COBOL.
+
+    These correspond to the conceptual sink categories used in
+    source-to-sink privacy analysis, while being represented through
+    actual COBOL and mainframe constructs.
+    """
+
+    # 1. Logging / output disclosure
+    LOGGING = auto()
+
+    # 2. Persistent file storage
+    FILE_STORAGE = auto()
+
+    # 3. External or network transfer
+    NETWORK_TRANSFER = auto()
+
+    # 4. Message / queue transfer
+    MESSAGING = auto()
+
+    # 5. Persistent database operation
+    DATABASE = auto()
+
+    # 6. External content or service interface
+    CONTENT_OR_SERVICE = auto()
+
+    UNKNOWN = auto()
 
 
 # ─── Node ID factory ──────────────────────────────────────────────────────────
@@ -104,10 +125,15 @@ def new_node_id() -> int:
 
 class CPG:
     """
-    Thin wrapper around a NetworkX MultiDiGraph that enforces node/edge schemas
-    and provides convenience query methods used by the taint engine and GDPR rules.
+    Wrapper around NetworkX MultiDiGraph.
 
-    The underlying graph is accessible as ``cpg.G`` for low-level operations.
+    Nodes store semantic information required by:
+
+        PII identification
+        source detection
+        sink detection
+        taint propagation
+        GDPR rule evaluation
     """
 
     def __init__(self):
@@ -117,32 +143,48 @@ class CPG:
 
     def add_node(
         self,
-        kind:          NodeKind,
-        stmt:          Any        = None,
-        program:       str        = "",
-        file:          str        = "",
-        line:          int        = 0,
-        is_sink:       bool       = False,
-        sink_kind:     Optional[SinkKind] = None,
-        is_sanitiser:  bool       = False,
-        is_guard:      bool       = False,
+        kind: NodeKind,
+        stmt: Any = None,
+        program: str = "",
+        file: str = "",
+        line: int = 0,
+        is_sink: bool = False,
+        sink_kind: Optional[SinkKind] = None,
+        is_source: bool = False,
+        source_kind: Optional[str] = None,
+        is_sanitiser: bool = False,
+        is_guard: bool = False,
         **extra,
     ) -> int:
         nid = new_node_id()
+
         self.G.add_node(
             nid,
-            kind         = kind,
-            stmt         = stmt,
-            program      = program,
-            file         = file,
-            line         = line,
-            pii_fields   = set(),
-            is_sink      = is_sink,
-            sink_kind    = sink_kind,
-            is_sanitiser = is_sanitiser,
-            is_guard     = is_guard,
+            kind=kind,
+            stmt=stmt,
+            program=program,
+            file=file,
+            line=line,
+
+            # Taint information
+            pii_fields=set(),
+            pii_categories={},
+
+            # Source information
+            is_source=is_source,
+            source_kind=source_kind,
+
+            # Sink information
+            is_sink=is_sink,
+            sink_kind=sink_kind,
+
+            # Privacy controls
+            is_sanitiser=is_sanitiser,
+            is_guard=is_guard,
+
             **extra,
         )
+
         return nid
 
     def get(self, nid: int) -> dict:
@@ -150,34 +192,92 @@ class CPG:
 
     # ─── Edge operations ──────────────────────────────────────────────────────
 
-    def add_edge(self, src: int, dst: int, kind: EdgeKind, **attrs) -> None:
-        self.G.add_edge(src, dst, kind=kind, **attrs)
+    def add_edge(
+        self,
+        src: int,
+        dst: int,
+        kind: EdgeKind,
+        **attrs,
+    ) -> None:
+        self.G.add_edge(
+            src,
+            dst,
+            kind=kind,
+            **attrs,
+        )
 
     def edges_of_kind(self, kind: EdgeKind):
-        """Yield (src, dst, data) for all edges of a given kind."""
-        for u, v, data in self.G.edges(data=True):
+        for source, destination, data in self.G.edges(data=True):
             if data.get("kind") == kind:
-                yield u, v, data
+                yield source, destination, data
 
     # ─── PII tagging ──────────────────────────────────────────────────────────
 
-    def tag_pii(self, nid: int, field_name: str) -> None:
-        self.G.nodes[nid]["pii_fields"].add(field_name)
+    def tag_pii(
+        self,
+        nid: int,
+        field_name: str,
+        category: Optional[str] = None,
+    ) -> None:
+        node = self.G.nodes[nid]
+
+        node["pii_fields"].add(field_name)
+
+        if category:
+            node["pii_categories"][field_name] = category
 
     def pii_fields(self, nid: int) -> set[str]:
-        return self.G.nodes[nid].get("pii_fields", set())
+        return self.G.nodes[nid].get(
+            "pii_fields",
+            set(),
+        )
+
+    def pii_category(
+        self,
+        nid: int,
+        field_name: str,
+    ) -> Optional[str]:
+        return self.G.nodes[nid].get(
+            "pii_categories",
+            {},
+        ).get(field_name)
 
     def is_pii_tainted(self, nid: int) -> bool:
         return bool(self.pii_fields(nid))
 
-    # ─── Sink / guard queries ─────────────────────────────────────────────────
+    # ─── Source queries ───────────────────────────────────────────────────────
 
-    def sinks(self, sink_kind: Optional[SinkKind] = None):
-        """Yield node IDs that are sinks (optionally filtered by kind)."""
+    def sources(
+        self,
+        source_kind: Optional[str] = None,
+    ):
         for nid, data in self.G.nodes(data=True):
-            if data.get("is_sink"):
-                if sink_kind is None or data.get("sink_kind") == sink_kind:
-                    yield nid
+            if not data.get("is_source"):
+                continue
+
+            if (
+                source_kind is None
+                or data.get("source_kind") == source_kind
+            ):
+                yield nid
+
+    # ─── Sink queries ─────────────────────────────────────────────────────────
+
+    def sinks(
+        self,
+        sink_kind: Optional[SinkKind] = None,
+    ):
+        for nid, data in self.G.nodes(data=True):
+            if not data.get("is_sink"):
+                continue
+
+            if (
+                sink_kind is None
+                or data.get("sink_kind") == sink_kind
+            ):
+                yield nid
+
+    # ─── Privacy-control queries ──────────────────────────────────────────────
 
     def sanitisers(self):
         for nid, data in self.G.nodes(data=True):
@@ -191,38 +291,98 @@ class CPG:
 
     # ─── Path queries ─────────────────────────────────────────────────────────
 
-    def has_path(self, src: int, dst: int) -> bool:
-        """True if there is any directed path from src to dst in the CPG."""
-        return nx.has_path(self.G, src, dst)
-
-    def all_simple_paths(self, src: int, dst: int, cutoff: int = 50):
-        """
-        Yield all simple directed paths from src to dst.
-        *cutoff* limits path length to avoid combinatorial explosion.
-        """
+    def has_path(
+        self,
+        src: int,
+        dst: int,
+    ) -> bool:
         try:
-            yield from nx.all_simple_paths(self.G, src, dst, cutoff=cutoff)
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
+            return nx.has_path(
+                self.G,
+                src,
+                dst,
+            )
+
+        except nx.NodeNotFound:
+            return False
+
+    def all_simple_paths(
+        self,
+        src: int,
+        dst: int,
+        cutoff: int = 50,
+    ):
+        try:
+            yield from nx.all_simple_paths(
+                self.G,
+                src,
+                dst,
+                cutoff=cutoff,
+            )
+
+        except (
+            nx.NetworkXNoPath,
+            nx.NodeNotFound,
+        ):
             return
 
-    def nodes_on_path(self, path: list[int]) -> list[dict]:
-        """Return node attribute dicts for each node in path."""
-        return [self.G.nodes[nid] for nid in path]
+    def nodes_on_path(
+        self,
+        path: list[int],
+    ) -> list[dict]:
+        return [
+            self.G.nodes[nid]
+            for nid in path
+        ]
 
-    # ─── Serialisation ────────────────────────────────────────────────────────
+    # ─── Summary ──────────────────────────────────────────────────────────────
 
     def summary(self) -> dict:
-        """Lightweight summary for logging / debugging."""
-        sink_count = sum(1 for _, d in self.G.nodes(data=True) if d.get("is_sink"))
-        tainted    = sum(1 for _, d in self.G.nodes(data=True) if d.get("pii_fields"))
+        sink_counts: dict[str, int] = {}
+
+        for _, data in self.G.nodes(data=True):
+            if data.get("is_sink"):
+                sink = data.get("sink_kind")
+
+                name = (
+                    sink.name
+                    if sink is not None
+                    else "UNKNOWN"
+                )
+
+                sink_counts[name] = (
+                    sink_counts.get(name, 0) + 1
+                )
+
+        source_count = sum(
+            1
+            for _, data in self.G.nodes(data=True)
+            if data.get("is_source")
+        )
+
+        tainted_count = sum(
+            1
+            for _, data in self.G.nodes(data=True)
+            if data.get("pii_fields")
+        )
+
         return {
-            "nodes":     self.G.number_of_nodes(),
-            "edges":     self.G.number_of_edges(),
-            "sinks":     sink_count,
-            "tainted":   tainted,
+            "nodes": self.G.number_of_nodes(),
+            "edges": self.G.number_of_edges(),
+            "sources": source_count,
+            "sinks": sum(sink_counts.values()),
+            "sink_categories": sink_counts,
+            "tainted": tainted_count,
         }
 
     def __repr__(self) -> str:
-        s = self.summary()
-        return (f"<CPG nodes={s['nodes']} edges={s['edges']} "
-                f"sinks={s['sinks']} tainted={s['tainted']}>")
+        summary = self.summary()
+
+        return (
+            f"<CPG "
+            f"nodes={summary['nodes']} "
+            f"edges={summary['edges']} "
+            f"sources={summary['sources']} "
+            f"sinks={summary['sinks']} "
+            f"tainted={summary['tainted']}>"
+        )
