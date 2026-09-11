@@ -435,6 +435,8 @@ class CPGBuilder:
                 program.program_id,
             )
 
+        self._add_group_containment_edges(program)
+
         for stmt in self._iter_top_level_statements(
             program
         ):
@@ -443,6 +445,56 @@ class CPGBuilder:
                 program.program_id,
                 program.file_path,
             )
+
+    def _add_group_containment_edges(
+        self,
+        program: CobolProgram,
+    ) -> None:
+        """
+        Connect each elementary field to its immediately enclosing group
+        item with a CONTAINS edge, and mark group-level nodes `is_group`.
+
+        program.data_items is a flat, declaration-ordered list (DataItem
+        carries no parent/child links), so group membership is
+        reconstructed from level numbers: an item is nested inside the
+        most recent preceding item with a strictly lower level number.
+        Levels 66/77/88 (RENAMES/independent items/condition names)
+        don't participate in this hierarchy.
+        """
+
+        stack: list[DataItem] = []
+
+        for item in program.data_items:
+
+            if item.level in (66, 77, 88):
+                continue
+
+            while stack and stack[-1].level >= item.level:
+                stack.pop()
+
+            child_nid = self._field_nodes.get(
+                (program.program_id, item.name)
+            )
+
+            if stack and child_nid is not None:
+
+                parent_item = stack[-1]
+
+                parent_nid = self._field_nodes.get(
+                    (program.program_id, parent_item.name)
+                )
+
+                if parent_nid is not None:
+
+                    self._cpg.add_edge(
+                        child_nid,
+                        parent_nid,
+                        kind=EdgeKind.CONTAINS,
+                    )
+
+                    self._cpg.G.nodes[parent_nid]["is_group"] = True
+
+            stack.append(item)
 
     def _make_data_item_node(
         self,

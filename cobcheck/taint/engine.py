@@ -85,6 +85,7 @@ _TAINT_EDGES = {
     EdgeKind.RETURN,
     EdgeKind.FILE_IO,
     EdgeKind.COPYBOOK,
+    EdgeKind.CONTAINS,
 }
 
 
@@ -351,6 +352,8 @@ class TaintEngine:
             if not tainted_fields:
                 continue
 
+            sink_flows: list[TaintFlow] = []
+
             for field_name in sorted(tainted_fields):
 
                 source_nodes = self._field_sources.get(
@@ -402,7 +405,7 @@ class TaintEngine:
                         SinkKind.UNKNOWN,
                     )
 
-                    flows.append(
+                    sink_flows.append(
                         TaintFlow(
                             pii_field=field_name,
                             pii_category=pii_category,
@@ -430,6 +433,26 @@ class TaintEngine:
                             consent_checked=consent_checked,
                         )
                     )
+
+            # De-duplicate flows to this sink: if one flow's source
+            # node lies on the path of another (more upstream) flow
+            # to the same sink, both describe the same physical data
+            # movement — e.g. CUST-SSN moved into WS-AUDIT-SSN before
+            # a write, where WS-AUDIT-SSN also independently matches a
+            # PII name pattern. Keep only the more original/upstream
+            # source rather than reporting the same disclosure twice.
+            dominated: set[int] = set()
+
+            for i, fi in enumerate(sink_flows):
+                for j, fj in enumerate(sink_flows):
+                    if i == j:
+                        continue
+                    if fj.source_nid in fi.path:
+                        dominated.add(j)
+
+            for idx, flow in enumerate(sink_flows):
+                if idx not in dominated:
+                    flows.append(flow)
 
         return flows
 

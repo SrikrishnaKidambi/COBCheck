@@ -325,67 +325,6 @@ def _extract_context(
         if len(context) >= limit:
             return context[:limit]
 
-    # ── Nearby declarations ───────────────────────────────────────────────
-
-    candidates: list[
-        tuple[int, str]
-    ] = []
-
-    for other_nid, data in cpg.G.nodes(
-        data=True
-    ):
-
-        if other_nid == nid:
-            continue
-
-        if (
-            data.get("kind")
-            != NodeKind.DATA_ITEM
-        ):
-            continue
-
-        if (
-            program
-            and data.get("program") != program
-        ):
-            continue
-
-        stmt = data.get("stmt")
-
-        if stmt is None:
-            continue
-
-        name = getattr(
-            stmt,
-            "name",
-            "",
-        )
-
-        if not name:
-            continue
-
-        other_line = data.get(
-            "line",
-            0,
-        )
-
-        distance = (
-            abs(other_line - line)
-            if line and other_line
-            else 10_000
-        )
-
-        candidates.append(
-            (distance, str(name))
-        )
-
-    for _, name in sorted(candidates):
-
-        if len(context) >= limit:
-            break
-
-        context.append(name)
-
     return context[:limit]
 
 
@@ -703,6 +642,17 @@ class PiiTagger:
                 data.get("kind")
                 != NodeKind.DATA_ITEM
             ):
+                continue
+
+            if data.get("is_group"):
+                # Group items (01-level records etc.) are never an
+                # independent PII source. They correctly carry taint
+                # via CONTAINS propagation from whichever elementary
+                # children are real PII (see cpg/builder.py) — tagging
+                # them here as well would double-count the same
+                # underlying field and also falsely tag groups whose
+                # children happen to be declared nearby but are
+                # unrelated.
                 continue
 
             stmt = data.get("stmt")

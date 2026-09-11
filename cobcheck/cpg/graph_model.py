@@ -73,6 +73,16 @@ class EdgeKind(Enum):
     COPYBOOK = auto()
     FILE_IO = auto()
 
+    # Structural containment: an elementary field to its immediately
+    # enclosing group item (reconstructed from COBOL level numbers,
+    # since DataItem is stored as a flat, declaration-ordered list
+    # rather than a tree). Taint-carrying: a group's storage genuinely
+    # contains its children's bytes, so a group populated only via
+    # MOVEs into its individual elementary fields (no explicit WRITE
+    # ... FROM) is still correctly seen as carrying whatever those
+    # children carry.
+    CONTAINS = auto()
+
 
 # ─── Sink categories ──────────────────────────────────────────────────────────
 
