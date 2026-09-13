@@ -107,7 +107,7 @@ def run_pipeline(
     logger.info("Found %d taint flows", len(flows))
 
     # ── Step 6: GDPR rules ───────────────────────────────────────────────────
-    logger.info("Applying GDPR rules R1–R4...")
+    logger.info("Applying GDPR rules R1–R6...")
     rule_engine = RuleEngine()
     violations  = rule_engine.run(flows, cpg)
     logger.info("Found %d violations", len(violations))

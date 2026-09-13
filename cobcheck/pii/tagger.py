@@ -68,7 +68,49 @@ class PiiCategory(Enum):
     VEHICLE = auto()
     WORKPLACE_MONITORING = auto()
     DATE_OF_BIRTH = auto()
+
+    # Art. 9(1) GDPR special categories (closed list — gdpr-info.eu/art-9-gdpr).
+    # HEALTH and BIOMETRIC already existed above for other reasons (general
+    # health-adjacent and biometric-adjacent fields); they are ALSO special
+    # category under Art. 9 and are included in PII_ART9_SPECIAL_CATEGORIES
+    # below. These five are categories Art. 9 names that had no equivalent
+    # in the taxonomy before:
+    RACIAL_ETHNIC_ORIGIN = auto()
+    POLITICAL_OPINION = auto()
+    RELIGIOUS_OR_PHILOSOPHICAL_BELIEF = auto()
+    TRADE_UNION_MEMBERSHIP = auto()
+    GENETIC = auto()
+    SEXUAL_ORIENTATION_OR_SEX_LIFE = auto()
+
+    # Art. 10 GDPR — criminal convictions/offences. Textually adjacent to
+    # Art. 9 (both get processing restrictions beyond ordinary personal
+    # data) but is a SEPARATE article with a separate condition (official
+    # authority / specific legal basis, not the Art. 9(2) exception list) —
+    # kept as its own category rather than folded into special-category.
+    CRIMINAL_OFFENCE_DATA = auto()
+
     UNKNOWN_PII = auto()
+
+
+# Art. 9(1): "special categories of personal data" — processing is
+# prohibited by default unless an Art. 9(2) exception applies. This is a
+# CLOSED list per the article text; nothing outside it belongs here.
+PII_ART9_SPECIAL_CATEGORIES = frozenset({
+    PiiCategory.RACIAL_ETHNIC_ORIGIN,
+    PiiCategory.POLITICAL_OPINION,
+    PiiCategory.RELIGIOUS_OR_PHILOSOPHICAL_BELIEF,
+    PiiCategory.TRADE_UNION_MEMBERSHIP,
+    PiiCategory.GENETIC,
+    PiiCategory.BIOMETRIC,       # "for the purpose of uniquely identifying"
+    PiiCategory.HEALTH,
+    PiiCategory.SEXUAL_ORIENTATION_OR_SEX_LIFE,
+})
+
+# Art. 10: personal data relating to criminal convictions and offences —
+# a distinct article from Art. 9, not part of the closed list above.
+PII_ART10_CRIMINAL_DATA = frozenset({
+    PiiCategory.CRIMINAL_OFFENCE_DATA,
+})
 
 
 # ─── Privado category mapping ────────────────────────────────────────────────
@@ -125,6 +167,61 @@ _NAME_RULES: tuple[
             re.IGNORECASE,
         ),
         PiiCategory.FINANCIAL,
+    ),
+
+    # Art. 9(1) special categories — name-heuristic only; Privado's own
+    # taxonomy strings for these are not known to us, so there is no
+    # corresponding _PRIVADO_CATEGORY_MAP entry (see note there).
+    (
+        re.compile(
+            r"\b(?:RACE|RACIAL|ETHNIC|ETHNICITY)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.RACIAL_ETHNIC_ORIGIN,
+    ),
+    (
+        re.compile(
+            r"\b(?:POLITICAL|PARTY[-_]?AFFIL)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.POLITICAL_OPINION,
+    ),
+    (
+        re.compile(
+            r"\b(?:RELIGION|RELIGIOUS|CREED|FAITH)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.RELIGIOUS_OR_PHILOSOPHICAL_BELIEF,
+    ),
+    (
+        re.compile(
+            r"\b(?:UNION|TRADE[-_]?UNION)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.TRADE_UNION_MEMBERSHIP,
+    ),
+    (
+        re.compile(
+            r"\b(?:GENETIC|DNA|GENOME)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.GENETIC,
+    ),
+    (
+        re.compile(
+            r"\b(?:SEXUAL[-_]?ORIENT|SEX[-_]?LIFE)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.SEXUAL_ORIENTATION_OR_SEX_LIFE,
+    ),
+
+    # Art. 10 — a separate article from Art. 9, kept as its own category.
+    (
+        re.compile(
+            r"\b(?:CRIMINAL|CONVICTION|OFFENSE|OFFENCE)\b",
+            re.IGNORECASE,
+        ),
+        PiiCategory.CRIMINAL_OFFENCE_DATA,
     ),
 )
 
