@@ -119,9 +119,12 @@ class TaintFlow:
     # Representative taint path.
     path: list[int]
 
+    source_program: str = ""
+
     # Flow metadata used later by the GDPR layer.
     sanitised: bool = False
     consent_checked: bool = False
+    retention_checked: bool = False
 
     # Filled by GDPR rules.
     violations: list[str] = field(default_factory=list)
@@ -400,9 +403,19 @@ class TaintEngine:
                         path,
                     )
 
+                    retention_checked = self._path_has_retention_marker(
+                        cpg,
+                        path,
+                    )
+
                     sink_kind = sink_data.get(
                         "sink_kind",
                         SinkKind.UNKNOWN,
+                    )
+
+                    source_program = cpg.get(source_nid).get(
+                        "program",
+                        "",
                     )
 
                     sink_flows.append(
@@ -429,8 +442,11 @@ class TaintEngine:
 
                             path=path,
 
+                            source_program=source_program,
+
                             sanitised=sanitised,
                             consent_checked=consent_checked,
+                            retention_checked=retention_checked,
                         )
                     )
 
@@ -550,6 +566,25 @@ class TaintEngine:
         for nid in path[1:-1]:
 
             if cpg.get(nid).get("is_guard"):
+                return True
+
+        return False
+
+    def _path_has_retention_marker(
+        self,
+        cpg: CPG,
+        path: list[int],
+    ) -> bool:
+        """
+        Return True when the representative flow path contains a
+        recognised retention/expiry marker (e.g. a purge routine or a
+        RETENTION-DATE-style field) — used for Art. 5(1)(e) storage
+        limitation.
+        """
+
+        for nid in path[1:-1]:
+
+            if cpg.get(nid).get("is_retention_marker"):
                 return True
 
         return False

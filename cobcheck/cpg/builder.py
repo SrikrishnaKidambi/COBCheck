@@ -125,6 +125,19 @@ _CONSENT_TOKENS = {
     "GDPR",
 }
 
+_RETENTION_TOKENS = {
+    "RETENTION",
+    "RETAIN",
+    "EXPIR",
+    "PURGE",
+    "TTL",
+    "ARCHIVE-UNTIL",
+    "ARCHIVE-DATE",
+    "DELETE-AFTER",
+    "DELETE-DATE",
+    "PURGE-DATE",
+}
+
 
 # SQL operations that persist or modify data.
 
@@ -331,6 +344,17 @@ def _is_guard_text(
     )
 
 
+def _is_retention_text(
+    value: str,
+) -> bool:
+    upper = value.upper()
+
+    return any(
+        token in upper
+        for token in _RETENTION_TOKENS
+    )
+
+
 # ─── CPG Builder ──────────────────────────────────────────────────────────────
 
 class CPGBuilder:
@@ -446,6 +470,40 @@ class CPGBuilder:
                 program.file_path,
             )
 
+    def _group_child_items(
+        self,
+        items: list,
+        group_item,
+    ) -> list:
+        """
+        Return every item declared under *group_item* in a flat,
+        declaration-ordered DataItem list — same level-number
+        reconstruction used by _add_group_containment_edges, exposed here
+        so CALL-parameter handling can pair up a group parameter's
+        children with the callee's LINKAGE group's children by name.
+        """
+        children = []
+        started = False
+
+        for item in items:
+
+            if item is group_item:
+                started = True
+                continue
+
+            if not started:
+                continue
+
+            if item.level in (66, 77, 88):
+                continue
+
+            if item.level <= group_item.level:
+                break
+
+            children.append(item)
+
+        return children
+
     def _add_group_containment_edges(
         self,
         program: CobolProgram,
@@ -522,6 +580,9 @@ class CPGBuilder:
             copybook=item.copybook or "",
             redefines=item.redefines or "",
             is_sanitiser=_is_sanitiser_text(
+                item.name
+            ),
+            is_retention_marker=_is_retention_text(
                 item.name
             ),
         )
@@ -918,6 +979,9 @@ class CPGBuilder:
                 file=file_path,
                 line=line,
                 is_sanitiser=_is_sanitiser_text(
+                    text
+                ),
+                is_retention_marker=_is_retention_text(
                     text
                 ),
             )
@@ -1721,6 +1785,70 @@ class CPGBuilder:
                         ),
                         position=index,
                     )
+
+                    # CONTAINS edges only propagate taint upward
+                    # (child -> parent — see _add_group_containment_edges).
+                    # A tainted group therefore has no path back down to
+                    # its own children, so taint reaching this LINKAGE
+                    # group via the edges above would dead-end here even
+                    # though the callee almost always operates on the
+                    # group's individual subfields, not the group as a
+                    # whole. Pair up same-named child fields directly so
+                    # taint reaches them without relying on a downward
+                    # CONTAINS traversal that would (correctly) not exist.
+                    caller_group_item = next(
+                        (
+                            it for it in caller.data_items
+                            if it.name.upper() == parameter_name.upper()
+                        ),
+                        None,
+                    )
+
+                    if caller_group_item is not None:
+
+                        caller_children = self._group_child_items(
+                            caller.data_items,
+                            caller_group_item,
+                        )
+                        callee_children = self._group_child_items(
+                            callee.data_items,
+                            linkage_field,
+                        )
+                        callee_children_by_name = {
+                            c.name.upper(): c
+                            for c in callee_children
+                        }
+
+                        for caller_child in caller_children:
+
+                            callee_child = callee_children_by_name.get(
+                                caller_child.name.upper()
+                            )
+
+                            if callee_child is None:
+                                continue
+
+                            caller_child_nid = self._field_nodes.get(
+                                (caller.program_id, caller_child.name)
+                            )
+                            callee_child_nid = self._field_nodes.get(
+                                (callee.program_id, callee_child.name)
+                            )
+
+                            if (
+                                caller_child_nid is None
+                                or callee_child_nid is None
+                            ):
+                                continue
+
+                            self._cpg.add_edge(
+                                caller_child_nid,
+                                callee_child_nid,
+                                kind=EdgeKind.PDG,
+                                operation="CALL USING (field)",
+                                via=f"CALL {callee.program_id}",
+                                position=index,
+                            )
 
                 if stmt.giving_param:
 

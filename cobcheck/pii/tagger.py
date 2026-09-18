@@ -500,6 +500,18 @@ def _category_from_privado(
 
 # ─── Stage 3: Groq LLM fallback ──────────────────────────────────────────────
 
+class _GroqCallError(Exception):
+    """Raised when a Groq API call fails for a reason that will fail identically
+    for every subsequent field (bad/decommissioned model, auth error, etc.) —
+    used to trip PiiTagger's circuit breaker rather than retry per field."""
+
+# Groq deprecates chat models on a rolling schedule (see console.groq.com/docs/deprecations).
+# Override with GROQ_MODEL if this one is retired too — no code change needed.
+_DEFAULT_GROQ_MODEL = os.getenv(
+    "GROQ_MODEL", "openai/gpt-oss-20b"
+)
+
+
 _LLM_SYSTEM_PROMPT = """
 You are analysing a legacy COBOL application for GDPR compliance.
 
@@ -666,13 +678,9 @@ def _call_groq_llm(
 
     except Exception as exc:
 
-        logger.warning(
-            "Groq API error for %s: %s",
-            field_name,
-            exc,
-        )
-
-        return None
+        raise _GroqCallError(
+            f"Groq API error for {field_name}: {exc}"
+        ) from exc
 
 
 # ─── Main tagger ─────────────────────────────────────────────────────────────
@@ -696,7 +704,7 @@ class PiiTagger:
     def __init__(
         self,
         groq_api_key: Optional[str] = None,
-        model: str = "llama3-8b-8192",
+        model: str = _DEFAULT_GROQ_MODEL,
         llm_threshold: int = 50,
     ):
 
@@ -711,6 +719,7 @@ class PiiTagger:
         self._model = model
         self._llm_limit = llm_threshold
         self._llm_calls = 0
+        self._llm_disabled = False
 
         self._stats = {
             "privado": 0,
@@ -901,19 +910,33 @@ class PiiTagger:
 
         if (
             self._api_key
+            and not self._llm_disabled
             and self._llm_calls
             < self._llm_limit
         ):
 
             self._llm_calls += 1
 
-            category = _call_groq_llm(
-                field_name=field_name,
-                picture=picture,
-                context_lines=context,
-                api_key=self._api_key,
-                model=self._model,
-            )
+            try:
+                category = _call_groq_llm(
+                    field_name=field_name,
+                    picture=picture,
+                    context_lines=context,
+                    api_key=self._api_key,
+                    model=self._model,
+                )
+            except _GroqCallError as exc:
+                self._llm_disabled = True
+                logger.warning(
+                    "%s -- disabling LLM fallback for the rest "
+                    "of this run (a dead/misconfigured model "
+                    "fails identically for every field, so "
+                    "remaining unclassified fields are tagged "
+                    "'none' instead of retrying). Set GROQ_MODEL "
+                    "to a currently-served model and re-run.",
+                    exc,
+                )
+                category = None
 
             if category is not None:
 

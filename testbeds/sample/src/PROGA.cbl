@@ -17,7 +17,7 @@ IDENTIFICATION DIVISION.
 
        WORKING-STORAGE SECTION.
        01  WS-RETURN-CODE          PIC 9(04) VALUE ZEROS.
-       01  WS-AUDIT-REC.
+       01  WS-AUDIT-REC. 
            05  WS-AUDIT-SSN        PIC 9(09).
            05  WS-AUDIT-NAME       PIC X(25).
            05  WS-AUDIT-ACTION     PIC X(10).

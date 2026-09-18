@@ -1,12 +1,12 @@
 {
   "cobcheck_version": "0.1.0",
-  "generated_at": "2026-09-11T08:43:12.849359+00:00",
-  "total_violations": 18,
+  "generated_at": "2026-09-18T12:03:20.861245+00:00",
+  "total_violations": 36,
   "violations": [
     {
       "violation_id": "V-0001",
       "rule_id": "R1",
-      "gdpr_article": "Art. 32 / 5(1)(f)",
+      "gdpr_article": "Art. 5(1)(f)",
       "severity": "high",
       "pii_field": "CUST-FIRST-NAME",
       "pii_category": "identifier",
@@ -43,8 +43,8 @@
     },
     {
       "violation_id": "V-0002",
-      "rule_id": "R2",
-      "gdpr_article": "Art. 6",
+      "rule_id": "R1B",
+      "gdpr_article": "Art. 32",
       "severity": "high",
       "pii_field": "CUST-FIRST-NAME",
       "pii_category": "identifier",
@@ -77,12 +77,50 @@
       ],
       "sanitised": false,
       "consent_checked": false,
-      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-FIRST-NAME reaches the sink in PROGA."
+      "remediation": "Apply an Art. 32(1)(a) measure (pseudonymisation or encryption) to CUST-FIRST-NAME before it reaches this sink."
     },
     {
       "violation_id": "V-0003",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6(1)",
+      "severity": "medium",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 27
+      },
+      "sink": {
+        "kind": "logging",
+        "program": "PROGA",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 27,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 24,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 61,
+          "stmt": "DisplayStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "No lawful-basis indicator found on the path to CUST-FIRST-NAME's sink in PROGA. Confirm which Art. 6(1) basis applies (consent, contract, legal obligation, vital interests, public task, or legitimate interests) and, if consent, that a check such as IF CONSENT-FLAG = 'Y' actually gates this path."
+    },
+    {
+      "violation_id": "V-0004",
       "rule_id": "R1",
-      "gdpr_article": "Art. 32 / 5(1)(f)",
+      "gdpr_article": "Art. 5(1)(f)",
       "severity": "high",
       "pii_field": "CUST-SSN",
       "pii_category": "national_id",
@@ -113,9 +151,9 @@
       "remediation": "Mask or encrypt CUST-SSN before writing to the logging sink in PROGA."
     },
     {
-      "violation_id": "V-0004",
-      "rule_id": "R2",
-      "gdpr_article": "Art. 6",
+      "violation_id": "V-0005",
+      "rule_id": "R1B",
+      "gdpr_article": "Art. 32",
       "severity": "high",
       "pii_field": "CUST-SSN",
       "pii_category": "national_id",
@@ -143,12 +181,45 @@
       ],
       "sanitised": false,
       "consent_checked": false,
-      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-SSN reaches the sink in PROGA."
+      "remediation": "Apply an Art. 32(1)(a) measure (pseudonymisation or encryption) to CUST-SSN before it reaches this sink."
     },
     {
-      "violation_id": "V-0005",
+      "violation_id": "V-0006",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6(1)",
+      "severity": "medium",
+      "pii_field": "CUST-SSN",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 29
+      },
+      "sink": {
+        "kind": "logging",
+        "program": "PROGA",
+        "line": 62
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 29,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 62,
+          "stmt": "DisplayStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "No lawful-basis indicator found on the path to CUST-SSN's sink in PROGA. Confirm which Art. 6(1) basis applies (consent, contract, legal obligation, vital interests, public task, or legitimate interests) and, if consent, that a check such as IF CONSENT-FLAG = 'Y' actually gates this path."
+    },
+    {
+      "violation_id": "V-0007",
       "rule_id": "R1",
-      "gdpr_article": "Art. 32 / 5(1)(f)",
+      "gdpr_article": "Art. 5(1)(f)",
       "severity": "high",
       "pii_field": "CUST-DOB",
       "pii_category": "date_of_birth",
@@ -179,9 +250,9 @@
       "remediation": "Mask or encrypt CUST-DOB before writing to the logging sink in PROGA."
     },
     {
-      "violation_id": "V-0006",
-      "rule_id": "R2",
-      "gdpr_article": "Art. 6",
+      "violation_id": "V-0008",
+      "rule_id": "R1B",
+      "gdpr_article": "Art. 32",
       "severity": "high",
       "pii_field": "CUST-DOB",
       "pii_category": "date_of_birth",
@@ -209,140 +280,302 @@
       ],
       "sanitised": false,
       "consent_checked": false,
-      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-DOB reaches the sink in PROGA."
-    },
-    {
-      "violation_id": "V-0007",
-      "rule_id": "R2",
-      "gdpr_article": "Art. 6",
-      "severity": "high",
-      "pii_field": "CUST-FIRST-NAME",
-      "pii_category": "identifier",
-      "source": {
-        "program": "PROGA",
-        "copybook": "",
-        "line": 27
-      },
-      "sink": {
-        "kind": "file_storage",
-        "program": "PROGA",
-        "line": 69
-      },
-      "flow_path": [
-        {
-          "program": "PROGA",
-          "line": 27,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGA",
-          "line": 22,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGA",
-          "line": 20,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGA",
-          "line": 69,
-          "stmt": "WriteStmt"
-        }
-      ],
-      "sanitised": false,
-      "consent_checked": false,
-      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-FIRST-NAME reaches the sink in PROGA."
-    },
-    {
-      "violation_id": "V-0008",
-      "rule_id": "R4",
-      "gdpr_article": "Art. 32",
-      "severity": "high",
-      "pii_field": "CUST-FIRST-NAME",
-      "pii_category": "identifier",
-      "source": {
-        "program": "PROGA",
-        "copybook": "",
-        "line": 27
-      },
-      "sink": {
-        "kind": "file_storage",
-        "program": "PROGA",
-        "line": 69
-      },
-      "flow_path": [
-        {
-          "program": "PROGA",
-          "line": 27,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGA",
-          "line": 22,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGA",
-          "line": 20,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGA",
-          "line": 69,
-          "stmt": "WriteStmt"
-        }
-      ],
-      "sanitised": false,
-      "consent_checked": false,
-      "remediation": "CUST-FIRST-NAME is written to persistent storage in PROGA without encryption. Apply AES-256 or equivalent before the WRITE, or store only a pseudonymous key."
+      "remediation": "Apply an Art. 32(1)(a) measure (pseudonymisation or encryption) to CUST-DOB before it reaches this sink."
     },
     {
       "violation_id": "V-0009",
       "rule_id": "R2",
-      "gdpr_article": "Art. 6",
-      "severity": "high",
-      "pii_field": "CUST-SSN",
-      "pii_category": "national_id",
+      "gdpr_article": "Art. 6(1)",
+      "severity": "medium",
+      "pii_field": "CUST-DOB",
+      "pii_category": "date_of_birth",
       "source": {
         "program": "PROGA",
         "copybook": "",
-        "line": 29
+        "line": 30
       },
       "sink": {
-        "kind": "file_storage",
+        "kind": "logging",
         "program": "PROGA",
-        "line": 69
+        "line": 63
       },
       "flow_path": [
         {
           "program": "PROGA",
-          "line": 29,
+          "line": 30,
           "stmt": "DataItem"
         },
         {
           "program": "PROGA",
-          "line": 21,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGA",
-          "line": 20,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGA",
-          "line": 69,
-          "stmt": "WriteStmt"
+          "line": 63,
+          "stmt": "DisplayStmt"
         }
       ],
       "sanitised": false,
       "consent_checked": false,
-      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-SSN reaches the sink in PROGA."
+      "remediation": "No lawful-basis indicator found on the path to CUST-DOB's sink in PROGA. Confirm which Art. 6(1) basis applies (consent, contract, legal obligation, vital interests, public task, or legitimate interests) and, if consent, that a check such as IF CONSENT-FLAG = 'Y' actually gates this path."
     },
     {
       "violation_id": "V-0010",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6(1)",
+      "severity": "medium",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 27
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGA",
+        "line": 69
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 27,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 22,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 20,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 69,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "No lawful-basis indicator found on the path to CUST-FIRST-NAME's sink in PROGA. Confirm which Art. 6(1) basis applies (consent, contract, legal obligation, vital interests, public task, or legitimate interests) and, if consent, that a check such as IF CONSENT-FLAG = 'Y' actually gates this path."
+    },
+    {
+      "violation_id": "V-0011",
       "rule_id": "R4",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 27
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGA",
+        "line": 69
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 27,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 22,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 20,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 69,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "CUST-FIRST-NAME is written to persistent storage in PROGA without an encryption marker on the path. Apply AES-256 or equivalent before the WRITE, or store only a pseudonymous key."
+    },
+    {
+      "violation_id": "V-0012",
+      "rule_id": "R4B",
+      "gdpr_article": "Art. 32",
+      "severity": "high",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 27
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGA",
+        "line": 69
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 27,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 22,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 20,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 69,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Apply an Art. 32(1)(a) measure (encryption at rest) to CUST-FIRST-NAME's storage in PROGA."
+    },
+    {
+      "violation_id": "V-0013",
+      "rule_id": "R7",
+      "gdpr_article": "Art. 5(1)(e)",
+      "severity": "medium",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 27
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGA",
+        "line": 69
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 27,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 22,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 20,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 69,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "No retention/expiry marker found on the path to CUST-FIRST-NAME's storage in PROGA. Confirm a retention period is defined for this record and, if enforced in code, that a recognisable marker (e.g. RETENTION-DATE, a PURGE routine) is on this path."
+    },
+    {
+      "violation_id": "V-0014",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6(1)",
+      "severity": "medium",
+      "pii_field": "CUST-SSN",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 29
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGA",
+        "line": 69
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 29,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 21,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 20,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 69,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "No lawful-basis indicator found on the path to CUST-SSN's sink in PROGA. Confirm which Art. 6(1) basis applies (consent, contract, legal obligation, vital interests, public task, or legitimate interests) and, if consent, that a check such as IF CONSENT-FLAG = 'Y' actually gates this path."
+    },
+    {
+      "violation_id": "V-0015",
+      "rule_id": "R4",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-SSN",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 29
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGA",
+        "line": 69
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 29,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 21,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 20,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 69,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "CUST-SSN is written to persistent storage in PROGA without an encryption marker on the path. Apply AES-256 or equivalent before the WRITE, or store only a pseudonymous key."
+    },
+    {
+      "violation_id": "V-0016",
+      "rule_id": "R4B",
       "gdpr_article": "Art. 32",
       "severity": "high",
       "pii_field": "CUST-SSN",
@@ -381,277 +614,446 @@
       ],
       "sanitised": false,
       "consent_checked": false,
-      "remediation": "CUST-SSN is written to persistent storage in PROGA without encryption. Apply AES-256 or equivalent before the WRITE, or store only a pseudonymous key."
-    },
-    {
-      "violation_id": "V-0011",
-      "rule_id": "R2",
-      "gdpr_article": "Art. 6",
-      "severity": "high",
-      "pii_field": "CUST-FIRST-NAME",
-      "pii_category": "identifier",
-      "source": {
-        "program": "PROGB",
-        "copybook": "",
-        "line": 32
-      },
-      "sink": {
-        "kind": "file_storage",
-        "program": "PROGB",
-        "line": 61
-      },
-      "flow_path": [
-        {
-          "program": "PROGB",
-          "line": 32,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 18,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 15,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 61,
-          "stmt": "WriteStmt"
-        }
-      ],
-      "sanitised": false,
-      "consent_checked": false,
-      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-FIRST-NAME reaches the sink in PROGB."
-    },
-    {
-      "violation_id": "V-0012",
-      "rule_id": "R4",
-      "gdpr_article": "Art. 32",
-      "severity": "high",
-      "pii_field": "CUST-FIRST-NAME",
-      "pii_category": "identifier",
-      "source": {
-        "program": "PROGB",
-        "copybook": "",
-        "line": 32
-      },
-      "sink": {
-        "kind": "file_storage",
-        "program": "PROGB",
-        "line": 61
-      },
-      "flow_path": [
-        {
-          "program": "PROGB",
-          "line": 32,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 18,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 15,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 61,
-          "stmt": "WriteStmt"
-        }
-      ],
-      "sanitised": false,
-      "consent_checked": false,
-      "remediation": "CUST-FIRST-NAME is written to persistent storage in PROGB without encryption. Apply AES-256 or equivalent before the WRITE, or store only a pseudonymous key."
-    },
-    {
-      "violation_id": "V-0013",
-      "rule_id": "R2",
-      "gdpr_article": "Art. 6",
-      "severity": "high",
-      "pii_field": "CUST-SSN",
-      "pii_category": "national_id",
-      "source": {
-        "program": "PROGB",
-        "copybook": "",
-        "line": 34
-      },
-      "sink": {
-        "kind": "file_storage",
-        "program": "PROGB",
-        "line": 61
-      },
-      "flow_path": [
-        {
-          "program": "PROGB",
-          "line": 34,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 17,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 15,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 61,
-          "stmt": "WriteStmt"
-        }
-      ],
-      "sanitised": false,
-      "consent_checked": false,
-      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-SSN reaches the sink in PROGB."
-    },
-    {
-      "violation_id": "V-0014",
-      "rule_id": "R4",
-      "gdpr_article": "Art. 32",
-      "severity": "high",
-      "pii_field": "CUST-SSN",
-      "pii_category": "national_id",
-      "source": {
-        "program": "PROGB",
-        "copybook": "",
-        "line": 34
-      },
-      "sink": {
-        "kind": "file_storage",
-        "program": "PROGB",
-        "line": 61
-      },
-      "flow_path": [
-        {
-          "program": "PROGB",
-          "line": 34,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 17,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 15,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 61,
-          "stmt": "WriteStmt"
-        }
-      ],
-      "sanitised": false,
-      "consent_checked": false,
-      "remediation": "CUST-SSN is written to persistent storage in PROGB without encryption. Apply AES-256 or equivalent before the WRITE, or store only a pseudonymous key."
-    },
-    {
-      "violation_id": "V-0015",
-      "rule_id": "R2",
-      "gdpr_article": "Art. 6",
-      "severity": "high",
-      "pii_field": "CUST-CARD-NUM",
-      "pii_category": "financial",
-      "source": {
-        "program": "PROGB",
-        "copybook": "",
-        "line": 40
-      },
-      "sink": {
-        "kind": "network_transfer",
-        "program": "PROGB",
-        "line": 67
-      },
-      "flow_path": [
-        {
-          "program": "PROGB",
-          "line": 40,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 23,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 21,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 67,
-          "stmt": "WriteStmt"
-        }
-      ],
-      "sanitised": false,
-      "consent_checked": false,
-      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-CARD-NUM reaches the sink in PROGB."
-    },
-    {
-      "violation_id": "V-0016",
-      "rule_id": "R3",
-      "gdpr_article": "Art. 44–49",
-      "severity": "critical",
-      "pii_field": "CUST-CARD-NUM",
-      "pii_category": "financial",
-      "source": {
-        "program": "PROGB",
-        "copybook": "",
-        "line": 40
-      },
-      "sink": {
-        "kind": "network_transfer",
-        "program": "PROGB",
-        "line": 67
-      },
-      "flow_path": [
-        {
-          "program": "PROGB",
-          "line": 40,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 23,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 21,
-          "stmt": "DataItem"
-        },
-        {
-          "program": "PROGB",
-          "line": 67,
-          "stmt": "WriteStmt"
-        }
-      ],
-      "sanitised": false,
-      "consent_checked": false,
-      "remediation": "CUST-CARD-NUM is transferred externally from PROGB. Ensure an adequacy decision, SCCs, or BCRs are in place. Consider pseudonymisation before the transfer."
+      "remediation": "Apply an Art. 32(1)(a) measure (encryption at rest) to CUST-SSN's storage in PROGA."
     },
     {
       "violation_id": "V-0017",
-      "rule_id": "R2",
-      "gdpr_article": "Art. 6",
-      "severity": "high",
-      "pii_field": "CUST-EMAIL",
-      "pii_category": "contact",
+      "rule_id": "R7",
+      "gdpr_article": "Art. 5(1)(e)",
+      "severity": "medium",
+      "pii_field": "CUST-SSN",
+      "pii_category": "national_id",
       "source": {
-        "program": "PROGB",
+        "program": "PROGA",
         "copybook": "",
-        "line": 38
+        "line": 29
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGA",
+        "line": 69
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 29,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 21,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 20,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGA",
+          "line": 69,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "No retention/expiry marker found on the path to CUST-SSN's storage in PROGA. Confirm a retention period is defined for this record and, if enforced in code, that a recognisable marker (e.g. RETENTION-DATE, a PURGE routine) is on this path."
+    },
+    {
+      "violation_id": "V-0018",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6(1)",
+      "severity": "medium",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 27
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGB",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 27,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 32,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 18,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 15,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 61,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "No lawful-basis indicator found on the path to CUST-FIRST-NAME's sink in PROGB. Confirm which Art. 6(1) basis applies (consent, contract, legal obligation, vital interests, public task, or legitimate interests) and, if consent, that a check such as IF CONSENT-FLAG = 'Y' actually gates this path."
+    },
+    {
+      "violation_id": "V-0019",
+      "rule_id": "R4",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 27
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGB",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 27,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 32,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 18,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 15,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 61,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "CUST-FIRST-NAME is written to persistent storage in PROGB without an encryption marker on the path. Apply AES-256 or equivalent before the WRITE, or store only a pseudonymous key."
+    },
+    {
+      "violation_id": "V-0020",
+      "rule_id": "R4B",
+      "gdpr_article": "Art. 32",
+      "severity": "high",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 27
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGB",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 27,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 32,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 18,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 15,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 61,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Apply an Art. 32(1)(a) measure (encryption at rest) to CUST-FIRST-NAME's storage in PROGB."
+    },
+    {
+      "violation_id": "V-0021",
+      "rule_id": "R7",
+      "gdpr_article": "Art. 5(1)(e)",
+      "severity": "medium",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 27
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGB",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 27,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 32,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 18,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 15,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 61,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "No retention/expiry marker found on the path to CUST-FIRST-NAME's storage in PROGB. Confirm a retention period is defined for this record and, if enforced in code, that a recognisable marker (e.g. RETENTION-DATE, a PURGE routine) is on this path."
+    },
+    {
+      "violation_id": "V-0022",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6(1)",
+      "severity": "medium",
+      "pii_field": "CUST-SSN",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 29
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGB",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 29,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 34,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 17,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 15,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 61,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "No lawful-basis indicator found on the path to CUST-SSN's sink in PROGB. Confirm which Art. 6(1) basis applies (consent, contract, legal obligation, vital interests, public task, or legitimate interests) and, if consent, that a check such as IF CONSENT-FLAG = 'Y' actually gates this path."
+    },
+    {
+      "violation_id": "V-0023",
+      "rule_id": "R4",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-SSN",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 29
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGB",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 29,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 34,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 17,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 15,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 61,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "CUST-SSN is written to persistent storage in PROGB without an encryption marker on the path. Apply AES-256 or equivalent before the WRITE, or store only a pseudonymous key."
+    },
+    {
+      "violation_id": "V-0024",
+      "rule_id": "R4B",
+      "gdpr_article": "Art. 32",
+      "severity": "high",
+      "pii_field": "CUST-SSN",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 29
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGB",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 29,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 34,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 17,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 15,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 61,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Apply an Art. 32(1)(a) measure (encryption at rest) to CUST-SSN's storage in PROGB."
+    },
+    {
+      "violation_id": "V-0025",
+      "rule_id": "R7",
+      "gdpr_article": "Art. 5(1)(e)",
+      "severity": "medium",
+      "pii_field": "CUST-SSN",
+      "pii_category": "national_id",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 29
+      },
+      "sink": {
+        "kind": "file_storage",
+        "program": "PROGB",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 29,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 34,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 17,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 15,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 61,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "No retention/expiry marker found on the path to CUST-SSN's storage in PROGB. Confirm a retention period is defined for this record and, if enforced in code, that a recognisable marker (e.g. RETENTION-DATE, a PURGE routine) is on this path."
+    },
+    {
+      "violation_id": "V-0026",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6(1)",
+      "severity": "medium",
+      "pii_field": "CUST-CARD-NUM",
+      "pii_category": "financial",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 35
       },
       "sink": {
         "kind": "network_transfer",
@@ -659,6 +1061,155 @@
         "line": 67
       },
       "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 35,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 40,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 23,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 21,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 67,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "No lawful-basis indicator found on the path to CUST-CARD-NUM's sink in PROGB. Confirm which Art. 6(1) basis applies (consent, contract, legal obligation, vital interests, public task, or legitimate interests) and, if consent, that a check such as IF CONSENT-FLAG = 'Y' actually gates this path."
+    },
+    {
+      "violation_id": "V-0027",
+      "rule_id": "R3",
+      "gdpr_article": "Art. 44",
+      "severity": "critical",
+      "pii_field": "CUST-CARD-NUM",
+      "pii_category": "financial",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 35
+      },
+      "sink": {
+        "kind": "network_transfer",
+        "program": "PROGB",
+        "line": 67
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 35,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 40,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 23,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 21,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 67,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "CUST-CARD-NUM appears to be transferred outside the processing system from PROGB. Confirm an Art. 45 adequacy decision, Art. 46 appropriate safeguards (e.g. SCCs), Art. 47 BCRs, or an Art. 49 derogation applies to this transfer."
+    },
+    {
+      "violation_id": "V-0028",
+      "rule_id": "R8",
+      "gdpr_article": "Art. 6(4)",
+      "severity": "medium",
+      "pii_field": "CUST-CARD-NUM",
+      "pii_category": "financial",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 35
+      },
+      "sink": {
+        "kind": "network_transfer",
+        "program": "PROGB",
+        "line": 67
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 35,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 40,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 23,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 21,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 67,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Confirm the purpose PROGB processes CUST-CARD-NUM for is compatible with the purpose it was originally collected for in PROGA (Art. 6(4) factors: the link between the two purposes, the context of original collection, the nature of the data, and possible consequences for the data subject). If incompatible, a new Art. 6(1) basis is needed for this path."
+    },
+    {
+      "violation_id": "V-0029",
+      "rule_id": "R2",
+      "gdpr_article": "Art. 6(1)",
+      "severity": "medium",
+      "pii_field": "CUST-EMAIL",
+      "pii_category": "contact",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 33
+      },
+      "sink": {
+        "kind": "network_transfer",
+        "program": "PROGB",
+        "line": 67
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 33,
+          "stmt": "DataItem"
+        },
         {
           "program": "PROGB",
           "line": 38,
@@ -682,19 +1233,19 @@
       ],
       "sanitised": false,
       "consent_checked": false,
-      "remediation": "Add a consent-flag check (e.g. IF CONSENT-FLAG = 'Y') before CUST-EMAIL reaches the sink in PROGB."
+      "remediation": "No lawful-basis indicator found on the path to CUST-EMAIL's sink in PROGB. Confirm which Art. 6(1) basis applies (consent, contract, legal obligation, vital interests, public task, or legitimate interests) and, if consent, that a check such as IF CONSENT-FLAG = 'Y' actually gates this path."
     },
     {
-      "violation_id": "V-0018",
+      "violation_id": "V-0030",
       "rule_id": "R3",
-      "gdpr_article": "Art. 44–49",
+      "gdpr_article": "Art. 44",
       "severity": "critical",
       "pii_field": "CUST-EMAIL",
       "pii_category": "contact",
       "source": {
-        "program": "PROGB",
+        "program": "PROGA",
         "copybook": "",
-        "line": 38
+        "line": 33
       },
       "sink": {
         "kind": "network_transfer",
@@ -702,6 +1253,11 @@
         "line": 67
       },
       "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 33,
+          "stmt": "DataItem"
+        },
         {
           "program": "PROGB",
           "line": 38,
@@ -725,7 +1281,220 @@
       ],
       "sanitised": false,
       "consent_checked": false,
-      "remediation": "CUST-EMAIL is transferred externally from PROGB. Ensure an adequacy decision, SCCs, or BCRs are in place. Consider pseudonymisation before the transfer."
+      "remediation": "CUST-EMAIL appears to be transferred outside the processing system from PROGB. Confirm an Art. 45 adequacy decision, Art. 46 appropriate safeguards (e.g. SCCs), Art. 47 BCRs, or an Art. 49 derogation applies to this transfer."
+    },
+    {
+      "violation_id": "V-0031",
+      "rule_id": "R8",
+      "gdpr_article": "Art. 6(4)",
+      "severity": "medium",
+      "pii_field": "CUST-EMAIL",
+      "pii_category": "contact",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 33
+      },
+      "sink": {
+        "kind": "network_transfer",
+        "program": "PROGB",
+        "line": 67
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 33,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 38,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 24,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 21,
+          "stmt": "DataItem"
+        },
+        {
+          "program": "PROGB",
+          "line": 67,
+          "stmt": "WriteStmt"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Confirm the purpose PROGB processes CUST-EMAIL for is compatible with the purpose it was originally collected for in PROGA (Art. 6(4) factors: the link between the two purposes, the context of original collection, the nature of the data, and possible consequences for the data subject). If incompatible, a new Art. 6(1) basis is needed for this path."
+    },
+    {
+      "violation_id": "V-0032",
+      "rule_id": "R9",
+      "gdpr_article": "Art. 5(1)(c)",
+      "severity": "medium",
+      "pii_field": "CUST-LAST-NAME",
+      "pii_category": "identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 72
+      },
+      "sink": {
+        "kind": "call_boundary_unused",
+        "program": "PROGB",
+        "line": 33
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 72,
+          "stmt": "CALL PROGB USING ..."
+        },
+        {
+          "program": "PROGB",
+          "line": 33,
+          "stmt": "LINKAGE CUST-LAST-NAME (never referenced)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "PROGB receives CUST-LAST-NAME from PROGA via CALL ... USING but never references it. Stop passing CUST-LAST-NAME into PROGB, or pass a narrower LINKAGE structure that excludes fields the callee does not need (Art. 5(1)(c) data minimisation)."
+    },
+    {
+      "violation_id": "V-0033",
+      "rule_id": "R9",
+      "gdpr_article": "Art. 5(1)(c)",
+      "severity": "medium",
+      "pii_field": "CUST-DOB",
+      "pii_category": "date_of_birth",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 72
+      },
+      "sink": {
+        "kind": "call_boundary_unused",
+        "program": "PROGB",
+        "line": 35
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 72,
+          "stmt": "CALL PROGB USING ..."
+        },
+        {
+          "program": "PROGB",
+          "line": 35,
+          "stmt": "LINKAGE CUST-DOB (never referenced)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "PROGB receives CUST-DOB from PROGA via CALL ... USING but never references it. Stop passing CUST-DOB into PROGB, or pass a narrower LINKAGE structure that excludes fields the callee does not need (Art. 5(1)(c) data minimisation)."
+    },
+    {
+      "violation_id": "V-0034",
+      "rule_id": "R9",
+      "gdpr_article": "Art. 5(1)(c)",
+      "severity": "medium",
+      "pii_field": "CUST-ADDR-LINE-1",
+      "pii_category": "contact",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 72
+      },
+      "sink": {
+        "kind": "call_boundary_unused",
+        "program": "PROGB",
+        "line": 36
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 72,
+          "stmt": "CALL PROGB USING ..."
+        },
+        {
+          "program": "PROGB",
+          "line": 36,
+          "stmt": "LINKAGE CUST-ADDR-LINE-1 (never referenced)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "PROGB receives CUST-ADDR-LINE-1 from PROGA via CALL ... USING but never references it. Stop passing CUST-ADDR-LINE-1 into PROGB, or pass a narrower LINKAGE structure that excludes fields the callee does not need (Art. 5(1)(c) data minimisation)."
+    },
+    {
+      "violation_id": "V-0035",
+      "rule_id": "R9",
+      "gdpr_article": "Art. 5(1)(c)",
+      "severity": "medium",
+      "pii_field": "CUST-ADDR-LINE-2",
+      "pii_category": "contact",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 72
+      },
+      "sink": {
+        "kind": "call_boundary_unused",
+        "program": "PROGB",
+        "line": 37
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 72,
+          "stmt": "CALL PROGB USING ..."
+        },
+        {
+          "program": "PROGB",
+          "line": 37,
+          "stmt": "LINKAGE CUST-ADDR-LINE-2 (never referenced)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "PROGB receives CUST-ADDR-LINE-2 from PROGA via CALL ... USING but never references it. Stop passing CUST-ADDR-LINE-2 into PROGB, or pass a narrower LINKAGE structure that excludes fields the callee does not need (Art. 5(1)(c) data minimisation)."
+    },
+    {
+      "violation_id": "V-0036",
+      "rule_id": "R9",
+      "gdpr_article": "Art. 5(1)(c)",
+      "severity": "medium",
+      "pii_field": "CUST-PHONE",
+      "pii_category": "contact",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 72
+      },
+      "sink": {
+        "kind": "call_boundary_unused",
+        "program": "PROGB",
+        "line": 39
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 72,
+          "stmt": "CALL PROGB USING ..."
+        },
+        {
+          "program": "PROGB",
+          "line": 39,
+          "stmt": "LINKAGE CUST-PHONE (never referenced)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "PROGB receives CUST-PHONE from PROGA via CALL ... USING but never references it. Stop passing CUST-PHONE into PROGB, or pass a narrower LINKAGE structure that excludes fields the callee does not need (Art. 5(1)(c) data minimisation)."
     }
   ],
   "programs_analysed": [
