@@ -706,15 +706,12 @@ class PiiTagger:
         groq_api_key: Optional[str] = None,
         model: str = _DEFAULT_GROQ_MODEL,
         llm_threshold: int = 50,
+        enable_llm_fallback: bool = False,
     ):
 
         self._api_key = (
-            groq_api_key
-            or os.getenv(
-                "GROQ_API_KEY",
-                "",
-            )
-        )
+            groq_api_key or os.getenv("GROQ_API_KEY", "")
+        ) if enable_llm_fallback else ""
 
         self._model = model
         self._llm_limit = llm_threshold

@@ -36,6 +36,10 @@ from .taint.engine          import TaintEngine
 from .gdpr.rules            import RuleEngine
 from .report.emitter        import emit_json, emit_summary
 
+from .llm_arm.runner import run_llm_only_arm
+from .llm_arm.codebook import DEFAULT_RULES
+
+
 logging.basicConfig(
     level  = logging.INFO,
     format = "%(levelname)s  %(name)s  %(message)s",
@@ -51,6 +55,7 @@ def run_pipeline(
     output_path:    str | None  = None,
     groq_api_key:   str | None  = None,
     verbose:        bool        = False,
+    enable_llm_fallback=False,
 ) -> list:
     """
     Full COBCheck pipeline. Returns the list of Violation objects.
@@ -96,7 +101,7 @@ def run_pipeline(
 
     # ── Step 4: tag PII ──────────────────────────────────────────────────────
     logger.info("Tagging PII fields...")
-    tagger    = PiiTagger(groq_api_key=groq_api_key)
+    tagger    = PiiTagger(groq_api_key=groq_api_key, enable_llm_fallback=enable_llm_fallback)
     pii_nodes = tagger.tag(cpg)
     logger.info("Tagged %d PII nodes  (stats: %s)", len(pii_nodes), tagger.stats)
 
@@ -152,15 +157,44 @@ Examples:
     parser.add_argument("--verbose",    action="store_true",
                         help="Enable DEBUG logging")
 
+    parser.add_argument("--arm", choices=["full", "llm-only"], default="full",
+                    help="Which arm to run: the full pipeline (default) or "
+                         "the LLM-only baseline (Arm 1, no recovered flow facts)")
+    parser.add_argument("--rules", nargs="+", default=DEFAULT_RULES,
+                        help="Obligations to evaluate in --arm llm-only (default: %(default)s)")
+    parser.add_argument("--llm-model", default="openai/gpt-oss-120b",
+                        help="Groq model for the LLM-only arm")
+
+    parser.add_argument("--enable-pii-llm-fallback", action="store_true",
+                    help="Allow Groq LLM fallback in PII tagging (off by default — "
+                         "full pipeline is deterministic per V2 brief)")
+
     args = parser.parse_args()
 
-    run_pipeline(
-        src_dirs      = args.src,
-        copybook_dirs = args.copybooks,
-        output_path   = args.output,
-        groq_api_key  = args.groq_key or None,
-        verbose       = args.verbose,
-    )
+    # in main(), before calling run_pipeline — branch on args.arm
+    if args.arm == "llm-only":
+        if not args.groq_key:
+            logger.error("--arm llm-only requires a Groq API key (--groq-key or GROQ_API_KEY env var)")
+            sys.exit(1)
+        violations = run_llm_only_arm(
+            src_dirs=args.src,
+            copybook_dirs=args.copybooks,
+            rules=args.rules,
+            api_key=args.groq_key,
+            model=args.llm_model,
+        )
+        print("\n" + emit_summary(violations))
+        emit_json(violations, output_path=args.output,
+                metadata={"arm": "llm-only", "rules_evaluated": args.rules, "model": args.llm_model})
+    else:
+        run_pipeline(
+            src_dirs=args.src,
+            copybook_dirs=args.copybooks,
+            output_path=args.output,
+            groq_api_key=(args.groq_key or None) if args.enable_pii_llm_fallback else None,
+            verbose=args.verbose,
+            enable_llm_fallback=args.enable_pii_llm_fallback,
+        )
 
 
 if __name__ == "__main__":

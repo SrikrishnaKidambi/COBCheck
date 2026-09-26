@@ -1,0 +1,675 @@
+{
+  "cobcheck_version": "0.1.0",
+  "generated_at": "2026-09-26T16:35:09.480707+00:00",
+  "total_violations": 20,
+  "violations": [
+    {
+      "violation_id": "LLM-0001",
+      "rule_id": "R1",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "personal identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 27
+      },
+      "sink": {
+        "kind": "display",
+        "program": "PROGA",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 27,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGA",
+          "line": 61,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Mask or truncate the first name before displaying, or remove the DISPLAY of personal data entirely. For example, replace the value with initials or a placeholder."
+    },
+    {
+      "violation_id": "LLM-0002",
+      "rule_id": "R1",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-SSN",
+      "pii_category": "sensitive personal data",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 29
+      },
+      "sink": {
+        "kind": "display",
+        "program": "PROGA",
+        "line": 62
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 29,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGA",
+          "line": 62,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Apply masking (e.g., show only last 4 digits) or avoid displaying the SSN altogether."
+    },
+    {
+      "violation_id": "LLM-0003",
+      "rule_id": "R1",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-DOB",
+      "pii_category": "personal identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 30
+      },
+      "sink": {
+        "kind": "display",
+        "program": "PROGA",
+        "line": 63
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 30,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGA",
+          "line": 63,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Mask the date of birth (e.g., show only year) or remove the DISPLAY of this field."
+    },
+    {
+      "violation_id": "LLM-0004",
+      "rule_id": "R4",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-SSN",
+      "pii_category": "social security number",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 66
+      },
+      "sink": {
+        "kind": "file_write",
+        "program": "PROGA",
+        "line": 69
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 66,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGA",
+          "line": 69,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Apply encryption or masking to CUST-SSN before the WRITE statement (e.g., encrypt WS-AUDIT-SSN or store a hashed version)."
+    },
+    {
+      "violation_id": "LLM-0005",
+      "rule_id": "R4",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "personal name",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 67
+      },
+      "sink": {
+        "kind": "file_write",
+        "program": "PROGA",
+        "line": 69
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 67,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGA",
+          "line": 69,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Mask or encrypt the name before writing, or store only a pseudonymized identifier."
+    },
+    {
+      "violation_id": "LLM-0006",
+      "rule_id": "R4",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-SSN",
+      "pii_category": "social security number",
+      "source": {
+        "program": "PROGB",
+        "copybook": "",
+        "line": 59
+      },
+      "sink": {
+        "kind": "file_write",
+        "program": "PROGB",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGB",
+          "line": 59,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 61,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Encrypt or hash the SSN before the WRITE, or store only a masked version."
+    },
+    {
+      "violation_id": "LLM-0007",
+      "rule_id": "R4",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "personal name",
+      "source": {
+        "program": "PROGB",
+        "copybook": "",
+        "line": 60
+      },
+      "sink": {
+        "kind": "file_write",
+        "program": "PROGB",
+        "line": 61
+      },
+      "flow_path": [
+        {
+          "program": "PROGB",
+          "line": 60,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 61,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Apply masking or encryption to the name before writing, or store a pseudonym."
+    },
+    {
+      "violation_id": "LLM-0008",
+      "rule_id": "R4",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-CARD-NUM",
+      "pii_category": "credit card number",
+      "source": {
+        "program": "PROGB",
+        "copybook": "",
+        "line": 65
+      },
+      "sink": {
+        "kind": "file_write",
+        "program": "PROGB",
+        "line": 67
+      },
+      "flow_path": [
+        {
+          "program": "PROGB",
+          "line": 65,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 67,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Encrypt or tokenise the credit card number before the WRITE operation."
+    },
+    {
+      "violation_id": "LLM-0009",
+      "rule_id": "R4",
+      "gdpr_article": "Art. 5(1)(f)",
+      "severity": "high",
+      "pii_field": "CUST-EMAIL",
+      "pii_category": "email address",
+      "source": {
+        "program": "PROGB",
+        "copybook": "",
+        "line": 66
+      },
+      "sink": {
+        "kind": "file_write",
+        "program": "PROGB",
+        "line": 67
+      },
+      "flow_path": [
+        {
+          "program": "PROGB",
+          "line": 66,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 67,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Mask or encrypt the email address before writing, or store only a hashed identifier."
+    },
+    {
+      "violation_id": "LLM-0010",
+      "rule_id": "R8",
+      "gdpr_article": "Art. 6(4)",
+      "severity": "medium",
+      "pii_field": "CUST-ID",
+      "pii_category": "customer identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 0
+      },
+      "sink": {
+        "kind": "file_write",
+        "program": "PROGB",
+        "line": 0
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 0,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 0,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Document the purpose of the archive/export, ensure it is compatible with the original collection purpose, and obtain explicit consent or provide an opt‑out mechanism for customers."
+    },
+    {
+      "violation_id": "LLM-0011",
+      "rule_id": "R8",
+      "gdpr_article": "Art. 6(4)",
+      "severity": "medium",
+      "pii_field": "CUST-SSN",
+      "pii_category": "national identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 0
+      },
+      "sink": {
+        "kind": "file_write",
+        "program": "PROGB",
+        "line": 0
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 0,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 0,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Limit the storage of SSN to only necessary contexts, encrypt the data in the archive, and verify that the archival purpose aligns with the original consent."
+    },
+    {
+      "violation_id": "LLM-0012",
+      "rule_id": "R8",
+      "gdpr_article": "Art. 6(4)",
+      "severity": "medium",
+      "pii_field": "CUST-FIRST-NAME",
+      "pii_category": "personal name",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 0
+      },
+      "sink": {
+        "kind": "file_write",
+        "program": "PROGB",
+        "line": 0
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 0,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 0,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Assess whether archiving the name is necessary for the intended purpose, and if not, omit it or pseudonymise it before writing."
+    },
+    {
+      "violation_id": "LLM-0013",
+      "rule_id": "R8",
+      "gdpr_article": "Art. 6(4)",
+      "severity": "medium",
+      "pii_field": "CUST-CARD-NUM",
+      "pii_category": "payment card number",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 0
+      },
+      "sink": {
+        "kind": "file_write",
+        "program": "PROGB",
+        "line": 0
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 0,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 0,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Encrypt or tokenise the card number before export, and ensure that the export purpose is documented and covered by the customer's consent."
+    },
+    {
+      "violation_id": "LLM-0014",
+      "rule_id": "R8",
+      "gdpr_article": "Art. 6(4)",
+      "severity": "medium",
+      "pii_field": "CUST-EMAIL",
+      "pii_category": "email address",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 0
+      },
+      "sink": {
+        "kind": "file_write",
+        "program": "PROGB",
+        "line": 0
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 0,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 0,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Confirm that the export of email addresses is covered by the original consent, and consider masking or limiting the data if not required for the export purpose."
+    },
+    {
+      "violation_id": "LLM-0015",
+      "rule_id": "R9",
+      "gdpr_article": "Art. 5(1)(c)",
+      "severity": "medium",
+      "pii_field": "CUST-LAST-NAME",
+      "pii_category": "personal identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 0
+      },
+      "sink": {
+        "kind": "none",
+        "program": "PROGB",
+        "line": 0
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 0,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 0,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Remove CUST-LAST-NAME from the CALL USING list (e.g., pass only needed fields) or modify PROGB to use the field if required."
+    },
+    {
+      "violation_id": "LLM-0016",
+      "rule_id": "R9",
+      "gdpr_article": "Art. 5(1)(c)",
+      "severity": "medium",
+      "pii_field": "CUST-DOB",
+      "pii_category": "personal identifier",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 0
+      },
+      "sink": {
+        "kind": "none",
+        "program": "PROGB",
+        "line": 0
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 0,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 0,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Exclude CUST-DOB from the CALL USING parameters or add logic in PROGB to use the field where appropriate."
+    },
+    {
+      "violation_id": "LLM-0017",
+      "rule_id": "R9",
+      "gdpr_article": "Art. 5(1)(c)",
+      "severity": "medium",
+      "pii_field": "CUST-ADDR-LINE-1",
+      "pii_category": "address",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 0
+      },
+      "sink": {
+        "kind": "none",
+        "program": "PROGB",
+        "line": 0
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 0,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 0,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Do not pass address fields that are not needed, or add processing in PROGB if the address is required."
+    },
+    {
+      "violation_id": "LLM-0018",
+      "rule_id": "R9",
+      "gdpr_article": "Art. 5(1)(c)",
+      "severity": "medium",
+      "pii_field": "CUST-ADDR-LINE-2",
+      "pii_category": "address",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 0
+      },
+      "sink": {
+        "kind": "none",
+        "program": "PROGB",
+        "line": 0
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 0,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 0,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Remove CUST-ADDR-LINE-2 from the CALL or implement its use in PROGB."
+    },
+    {
+      "violation_id": "LLM-0019",
+      "rule_id": "R9",
+      "gdpr_article": "Art. 5(1)(c)",
+      "severity": "medium",
+      "pii_field": "CUST-PHONE",
+      "pii_category": "contact",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 0
+      },
+      "sink": {
+        "kind": "none",
+        "program": "PROGB",
+        "line": 0
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 0,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 0,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Exclude CUST-PHONE from the CALL USING list or add appropriate handling in PROGB."
+    },
+    {
+      "violation_id": "LLM-0020",
+      "rule_id": "R9",
+      "gdpr_article": "Art. 5(1)(c)",
+      "severity": "medium",
+      "pii_field": "CUST-CONSENT-FLAG",
+      "pii_category": "consent indicator",
+      "source": {
+        "program": "PROGA",
+        "copybook": "",
+        "line": 0
+      },
+      "sink": {
+        "kind": "none",
+        "program": "PROGB",
+        "line": 0
+      },
+      "flow_path": [
+        {
+          "program": "PROGA",
+          "line": 0,
+          "stmt": "(LLM-identified source — no recovered flow path)"
+        },
+        {
+          "program": "PROGB",
+          "line": 0,
+          "stmt": "(LLM-identified sink — no recovered flow path)"
+        }
+      ],
+      "sanitised": false,
+      "consent_checked": false,
+      "remediation": "Do not pass the consent flag if not needed, or incorporate its use in PROGB's logic."
+    }
+  ],
+  "arm": "llm-only",
+  "rules_evaluated": [
+    "R1",
+    "R4",
+    "R8",
+    "R9"
+  ],
+  "model": "openai/gpt-oss-120b"
+}
