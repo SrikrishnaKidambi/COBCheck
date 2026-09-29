@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Optional
 
 from .ast_nodes  import CobolProgram, CopyStmt, SourceLocation
-from .ast_builder import build_ast
+from .ast_builder import build_ast, normalize_fixed_format
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,8 @@ def _inline_copy_statements(
     resolved_members: list[str] = []
     unresolved_members: list[str] = []
 
+    source_text = normalize_fixed_format(source_text)
+
     for line in source_text.splitlines():
         m = _COPY_STMT_RE.match(line)
         if not m:
@@ -96,26 +98,20 @@ def _inline_copy_statements(
             continue
 
         try:
-            cb_text = Path(path).read_text(encoding="latin-1")
+            cb_text = normalize_fixed_format(
+                Path(path).read_text(encoding="latin-1")
+            )
         except Exception as exc:
             logger.error("Failed to read copybook %s: %s", path, exc)
             unresolved_members.append(member)
             out_lines.append(f"      *> COBCHECK: UNREADABLE COPY {member}")
             continue
 
-        # Drop comment-only lines: this grammar's comment-line recognition
-        # is column-sensitive and several real-world copybooks (including
-        # our own test fixtures) don't reliably match it, causing a parse
-        # error. Comments carry no data-flow information we need, so it's
-        # safe to strip rather than fix column-exact comment lexing.
-        # Original line numbers are kept per kept-line so location
-        # correction below still points at the real line in the copybook
-        # file, not an index into the post-strip list.
-        kept = [
-            (orig_no, ln)
-            for orig_no, ln in enumerate(cb_text.splitlines(), start=1)
-            if not ln.lstrip().startswith("*")
-        ]
+        # normalize_fixed_format already blanks comment lines (indicator
+        # column '*'/'/'), preserving one line per original line — so no
+        # separate comment filter is needed here, and every line's
+        # original line number maps 1:1 to its position in cb_text.
+        kept = list(enumerate(cb_text.splitlines(), start=1))
         start_line = len(out_lines) + 1  # 1-indexed line in expanded text
         out_lines.extend(ln for _, ln in kept)
         splices.append({
@@ -265,7 +261,7 @@ class CopybookResolver:
             return self._cache[path]
 
         try:
-            source = Path(path).read_text(encoding="latin-1")
+            source = normalize_fixed_format(Path(path).read_text(encoding="latin-1"))
             program = build_ast(source, path)
             self._cache[path] = program
             logger.debug("Parsed copybook %s (%d data items)",
@@ -289,5 +285,5 @@ class CopybookResolver:
 
 def load_program(file_path: str) -> CobolProgram:
     """Parse a single .cbl file and return its AST (no copybook resolution)."""
-    source = Path(file_path).read_text(encoding="latin-1")
+    source = normalize_fixed_format(Path(file_path).read_text(encoding="latin-1"))
     return build_ast(source, file_path)

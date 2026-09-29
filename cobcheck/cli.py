@@ -30,6 +30,7 @@ from dotenv import load_dotenv
 
 from .parser.ast_nodes     import CobolProgram
 from .parser.copybook_resolver import CopybookResolver, load_program_resolved
+from .parser.ast_builder import PARSE_DIAGNOSTICS
 from .cpg.builder           import CPGBuilder
 from .pii.tagger            import PiiTagger
 from .taint.engine          import TaintEngine
@@ -69,6 +70,12 @@ def run_pipeline(
         for ext in ("*.cbl", "*.CBL", "*.cob", "*.COB"):
             cbl_files.extend(Path(src_dir).rglob(ext))
 
+    # rglob is case-insensitive on Windows, so '*.cbl' and '*.CBL' hit the
+    # same files: de-duplicate so each program is parsed once.
+    cbl_files = sorted(
+        {os.path.normcase(str(p.resolve())): p for p in cbl_files}.values()
+    )
+
     if not cbl_files:
         logger.error("No .cbl files found in: %s", src_dirs)
         sys.exit(1)
@@ -83,6 +90,14 @@ def run_pipeline(
         logger.info("Parsing %s", cbl_path.name)
         try:
             prog = load_program_resolved(str(cbl_path), resolver)
+            diag = PARSE_DIAGNOSTICS.get(str(cbl_path), {})
+            n_err = diag.get("syntax_errors", 0)
+            if not (prog.paragraphs or prog.sections):
+                logger.warning("%s: EMPTY program after parse (%d syntax errors)",
+                               cbl_path.name, n_err)
+            elif n_err:
+                logger.warning("%s: %d syntax errors, first: %s",
+                               cbl_path.name, n_err, diag["first_errors"][:2])
             programs.append(prog)
         except Exception as exc:
             logger.warning("Failed to parse %s: %s", cbl_path.name, exc)

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 import re
+from .grammar_prep import prepare_for_grammar
 
 from .ast_nodes import (
     SourceLocation,
@@ -59,6 +60,18 @@ try:
     from antlr4 import CommonTokenStream, InputStream
     from antlr4.tree.Tree import TerminalNode
 
+    from antlr4.error.ErrorListener import ErrorListener
+
+    class _ErrorCollector(ErrorListener):
+        """Collects syntax errors instead of printing them to stderr."""
+
+        def __init__(self):
+            super().__init__()
+            self.errors = []
+
+        def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e):
+            self.errors.append((line, column, msg))
+
     from .generated.Cobol85Lexer import Cobol85Lexer
     from .generated.Cobol85Parser import Cobol85Parser
 
@@ -69,6 +82,103 @@ except ImportError:
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
+
+_ID_DIV_RE = re.compile(r"^\s*(?:IDENTIFICATION|ID)\s+DIVISION\s*\.", re.IGNORECASE)
+_OTHER_DIV_RE = re.compile(r"^\s*(?:ENVIRONMENT|DATA|PROCEDURE)\s+DIVISION\b", re.IGNORECASE)
+_PROGRAM_ID_RE = re.compile(r"^\s*PROGRAM-ID\b", re.IGNORECASE)
+_COMMENT_PARA_RE = re.compile(
+    r"^(\s*(?:AUTHOR|INSTALLATION|DATE-WRITTEN|DATE-COMPILED|SECURITY|REMARKS))\s*\.",
+    re.IGNORECASE,
+)
+
+
+def _blank_comment_entries(lines: list[str]) -> list[str]:
+    """
+    Inside IDENTIFICATION DIVISION only: keep 'AUTHOR.' style headers but drop
+    their free-text comment entries (including continuation lines).
+    Line count is preserved (dropped text becomes an empty line), so line
+    numbers stay identical to the original file.
+    """
+    out: list[str] = []
+    in_id = False
+    in_comment = False
+    for ln in lines:
+        if _ID_DIV_RE.match(ln):
+            in_id, in_comment = True, False
+            out.append(ln)
+            continue
+        if in_id and _OTHER_DIV_RE.match(ln):
+            in_id, in_comment = False, False
+            out.append(ln)
+            continue
+        if not in_id:
+            out.append(ln)
+            continue
+        m = _COMMENT_PARA_RE.match(ln)
+        if m:
+            out.append(m.group(1) + ".")
+            in_comment = True
+            continue
+        if _PROGRAM_ID_RE.match(ln):
+            in_comment = False
+            out.append(ln)
+            continue
+        out.append("" if in_comment else ln)
+    return out
+
+
+_CBL_CARD_RE = re.compile(
+    r"^\s*(?:CBL|PROCESS)(?![A-Za-z0-9\-])\s+\S",
+    re.IGNORECASE,
+)
+_LISTING_DIRECTIVE_RE = re.compile(
+    r"^\s*(?:EJECT|SKIP[123]|TITLE\s+['\"].*)\s*$",
+    re.IGNORECASE,
+)
+
+
+def normalize_fixed_format(source_text: str) -> str:
+    """
+    Convert IBM fixed-format COBOL source into free-format text the
+    grammar can parse.
+
+    Column layout (1-indexed, per the IBM COBOL fixed-format spec):
+        1-6    sequence number   (discarded)
+        7      indicator area    ('*' or '/' = comment; '-' = continuation)
+        8-11   Area A
+        12-72  Area B
+        73-80  identification field (discarded)
+
+    One output line is produced per input line (comment lines and compiler
+    directives -- CBL/PROCESS cards before the first real line, EJECT, SKIP1-3,
+    TITLE -- become an empty line rather than being deleted), so line numbers
+    in the normalized text stay identical to line numbers in the original
+    file; no downstream location remapping is required.
+
+    Known limitation: continuation lines (indicator '-') are passed
+    through as ordinary code rather than joined onto the previous line's
+    literal.
+    """
+    out_lines: list[str] = []
+    in_header = True   # CBL/PROCESS cards can only precede the first real line
+    for raw_line in source_text.splitlines():
+        indicator = raw_line[6:7] if len(raw_line) > 6 else " "
+        if indicator in ("*", "/"):
+            out_lines.append("")
+            continue
+        content = raw_line[7:72] if len(raw_line) > 7 else ""
+        if in_header:
+            if _CBL_CARD_RE.match(raw_line) or _CBL_CARD_RE.match(content):
+                out_lines.append("")
+                continue
+            if content.strip():
+                in_header = False
+        if _LISTING_DIRECTIVE_RE.match(content):
+            out_lines.append("")
+            continue
+        out_lines.append(content.rstrip())
+    return "\n".join(_blank_comment_entries(out_lines))
+
 
 def _loc(ctx, program_id: str, file_path: str) -> SourceLocation:
     token = ctx.start if hasattr(ctx, "start") and ctx.start else ctx
@@ -175,6 +285,14 @@ def _collect_identifiers(ctx) -> list[str]:
     return names
 
 
+_EXEC_TAG_RE = re.compile(r"\*>EXEC(?:CICS|SQLIMS|SQL)[ \t]?")
+
+
+def _exec_raw_text(ctx) -> str:
+    """Original EXEC ... END-EXEC text, with grammar tags and '}' removed."""
+    return _EXEC_TAG_RE.sub("", _text(ctx)).replace("}", " ")
+
+
 def _extract_exec_operation(raw_text: str, family: str) -> str:
     """
     Extract the primary operation from an EXEC block.
@@ -205,7 +323,7 @@ def _extract_exec_operation(raw_text: str, family: str) -> str:
 
     if family == "SQL_IMS":
         match = re.search(
-            r"EXEC\s+SQL\s+IMS\s+([A-Z0-9\-]+)",
+            r"EXEC\s+(?:SQLIMS|SQL\s+IMS|DLI)\s+([A-Z0-9\-]+)",
             text,
         )
 
@@ -248,6 +366,8 @@ def _normalise_exec_identifiers(raw_text: str) -> list[str]:
         # SQL
         "SQL",
         "IMS",
+        "SQLIMS",
+        "DLI",
         "SELECT",
         "INSERT",
         "UPDATE",
@@ -1156,7 +1276,7 @@ class _CobolASTVisitor:
 
     def _build_exec_sql(self, ctx) -> ExecSqlStmt:
 
-        raw_text = _text(ctx)
+        raw_text = _exec_raw_text(ctx)
 
         return ExecSqlStmt(
             operation=_extract_exec_operation(
@@ -1177,7 +1297,7 @@ class _CobolASTVisitor:
 
     def _build_exec_cics(self, ctx) -> ExecCicsStmt:
 
-        raw_text = _text(ctx)
+        raw_text = _exec_raw_text(ctx)
 
         return ExecCicsStmt(
             operation=_extract_exec_operation(
@@ -1198,7 +1318,7 @@ class _CobolASTVisitor:
 
     def _build_exec_sql_ims(self, ctx) -> ExecSqlImsStmt:
 
-        raw_text = _text(ctx)
+        raw_text = _exec_raw_text(ctx)
 
         return ExecSqlImsStmt(
             operation=_extract_exec_operation(
@@ -1387,6 +1507,9 @@ class _CobolASTVisitor:
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
+PARSE_DIAGNOSTICS: dict[str, dict] = {}   # file_path -> {"syntax_errors", "first_errors"}
+
+
 def build_ast(
     source_text: str,
     file_path: str,
@@ -1399,22 +1522,25 @@ def build_ast(
             "Run: ./scripts/generate_parser.sh"
         )
 
-    input_stream = InputStream(source_text)
+    source_text = prepare_for_grammar(source_text)
 
-    lexer = Cobol85Lexer(input_stream)
+    collector = _ErrorCollector()
 
-    token_stream = CommonTokenStream(
-        lexer
-    )
+    lexer = Cobol85Lexer(InputStream(source_text))
+    lexer.removeErrorListeners()
+    lexer.addErrorListener(collector)
 
-    parser = Cobol85Parser(
-        token_stream
-    )
+    parser = Cobol85Parser(CommonTokenStream(lexer))
+    parser.removeErrorListeners()
+    parser.addErrorListener(collector)
 
     tree = parser.startRule()
 
-    visitor = _CobolASTVisitor(
-        file_path
-    )
+    program = _CobolASTVisitor(file_path).build(tree)
 
-    return visitor.build(tree)
+    PARSE_DIAGNOSTICS[file_path] = {
+        "syntax_errors": len(collector.errors),
+        "first_errors":  collector.errors[:5],
+    }
+
+    return program

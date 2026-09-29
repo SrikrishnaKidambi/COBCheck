@@ -1,0 +1,158 @@
+"""
+cobcheck/parser/grammar_prep.py
+───────────────────────────────
+Text-level rewrites that make IBM COBOL acceptable to the ProLeap-style
+Cobol85.g4 grammar.  Runs on *normalized* (already column-stripped) text,
+after COPY inlining, immediately before the ANTLR lexer.
+
+Contract for every rule in RULES:
+    * takes text, returns text
+    * NEVER adds or removes a line  (source locations stay valid)
+
+To handle a new construct later: write one function with that contract and
+append it to RULES.
+
+EXEC tagging convention (taken from Cobol85.g4):
+
+    EXECCICSLINE   : '*>EXECCICS'   WS ~('\\n'|'\\r'|'}')* ('\\n'|'\\r'|'}')
+    EXECSQLLINE    : '*>EXECSQL'    WS ...
+    EXECSQLIMSLINE : '*>EXECSQLIMS' WS ...
+
+so every physical line of an EXEC block gets its own tag prefix, and the
+block is closed with '}' right after END-EXEC (so a following '.' is not
+swallowed into the token).
+"""
+
+from __future__ import annotations
+
+import re
+import logging
+
+logger = logging.getLogger(__name__)
+
+# EXEC <family> -> grammar tag.  DLI is IMS DL/I, so it shares the IMS rule.
+_FAMILY_TAG: dict[str, str] = {
+    "CICS":   "*>EXECCICS",
+    "SQL":    "*>EXECSQL",
+    "SQLIMS": "*>EXECSQLIMS",
+    "DLI":    "*>EXECSQLIMS",
+}
+
+# Families the grammar has no rule for (ADATA, ...).  They are tagged with this
+# opaque rule so the rest of the file still parses; a warning is logged for each.
+# Set to None to leave them untouched (they will then show up as parse errors).
+UNKNOWN_FAMILY_TAG: str | None = "*>EXECSQLIMS"
+
+_EXEC_RE     = re.compile(r"(?<![A-Za-z0-9\-])EXEC(?![A-Za-z0-9\-])", re.IGNORECASE)
+_END_EXEC_RE = re.compile(r"(?<![A-Za-z0-9\-])END-EXEC(?![A-Za-z0-9\-])", re.IGNORECASE)
+_WORD_RE     = re.compile(r"\s*([A-Za-z][A-Za-z0-9\-]*)")
+_IMS_RE      = re.compile(r"\s+IMS(?![A-Za-z0-9\-])", re.IGNORECASE)
+
+
+def _mask_literals(line: str) -> str:
+    """
+    Same-length copy of *line* with string literals and a '*>' floating
+    comment blanked out, so regexes only ever see code.  Literals never span
+    physical lines here, so state resets per line.
+    """
+    out = list(line)
+    n, i, quote = len(line), 0, None
+    while i < n:
+        c = line[i]
+        if quote:
+            out[i] = " "
+            if c == quote:
+                if i + 1 < n and line[i + 1] == quote:   # doubled quote = escape
+                    out[i + 1] = " "
+                    i += 1
+                else:
+                    quote = None
+        elif c in ("'", '"'):
+            quote = c
+            out[i] = " "
+        elif c == "*" and line.startswith("*>", i):
+            for j in range(i, n):
+                out[j] = " "
+            break
+        i += 1
+    return "".join(out)
+
+
+def _family_after(code: str, end: int, masked: list[str], idx: int) -> str:
+    """Family word following EXEC (looks on the next lines if EXEC ends the line)."""
+    m = _WORD_RE.match(code, end)
+    if m:
+        family = m.group(1).upper()
+        if family == "SQL" and _IMS_RE.match(code, m.end()):
+            return "SQLIMS"
+        return family
+    if code[end:].strip() == "":
+        for nxt in masked[idx + 1: idx + 4]:
+            m = _WORD_RE.match(nxt)
+            if m:
+                return m.group(1).upper()
+            if nxt.strip():
+                break
+    return ""
+
+
+def tag_exec_blocks(text: str) -> str:
+    lines  = text.split("\n")
+    masked = [_mask_literals(ln) for ln in lines]
+    out: list[str] = []
+    open_tag: str | None = None          # tag of the EXEC block we are inside
+
+    for idx, line in enumerate(lines):
+        code   = masked[idx]
+        pieces: list[str] = []
+        pos    = 0
+        if open_tag is not None:         # continuation line of a multi-line block
+            pieces.append(open_tag + " ")
+
+        while True:
+            if open_tag is None:
+                m = _EXEC_RE.search(code, pos)
+                if not m:
+                    pieces.append(line[pos:])
+                    break
+                family = _family_after(code, m.end(), masked, idx)
+                tag = _FAMILY_TAG.get(family)
+                if tag is None:
+                    logger.warning("line %d: EXEC %s has no grammar tag%s",
+                                   idx + 1, family or "<?>",
+                                   "" if UNKNOWN_FAMILY_TAG else " (left untouched)")
+                    tag = UNKNOWN_FAMILY_TAG
+                if tag is None:
+                    pieces.append(line[pos:m.end()])
+                    pos = m.end()
+                    continue
+                pieces.append(line[pos:m.start()])
+                pieces.append(tag + " ")
+                open_tag = tag
+                pos = m.start()
+
+            e = _END_EXEC_RE.search(code, pos)
+            if e is None:                # block continues on the next line
+                pieces.append(line[pos:].replace("}", " "))
+                break
+            pieces.append(line[pos:e.end()].replace("}", " ") + "}")
+            pos = e.end()
+            open_tag = None
+
+        out.append("".join(pieces))
+
+    if open_tag is not None:
+        logger.warning("file ends inside an unterminated EXEC block")
+    return "\n".join(out)
+
+
+# Ordered list of rewrites.  Add new ones here.
+RULES = [tag_exec_blocks]
+
+
+def prepare_for_grammar(text: str) -> str:
+    n_lines = text.count("\n")
+    for rule in RULES:
+        text = rule(text)
+    assert text.count("\n") == n_lines, "grammar_prep rule changed the line count"
+    return text

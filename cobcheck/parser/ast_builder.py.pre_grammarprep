@@ -1,0 +1,1496 @@
+"""
+cobcheck/parser/ast_builder.py
+──────────────────────────────
+Walks the ANTLR COBOL85 parse tree and produces CobolProgram AST nodes.
+
+The builder preserves the COBOL constructs required by COBCheck's
+source-to-sink analysis:
+
+    MOVE / COMPUTE / READ
+        → ordinary data movement
+
+    WRITE / DISPLAY
+        → file, logging, print/output sinks
+
+    CALL
+        → inter-program propagation or external service transfer
+
+    EXEC SQL
+        → database operations
+
+    EXEC CICS
+        → network transfer, messaging, external service operations
+
+    EXEC SQL IMS
+        → persistent IMS database operations
+
+Unsupported statements remain GenericStmt nodes so that the AST and CFG
+still retain source-code coverage.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+
+from .ast_nodes import (
+    SourceLocation,
+    DataItem,
+    DataSection,
+    MoveStmt,
+    ComputeStmt,
+    CallStmt,
+    WriteStmt,
+    ReadStmt,
+    DisplayStmt,
+    ExecSqlStmt,
+    ExecCicsStmt,
+    ExecSqlImsStmt,
+    CopyStmt,
+    IfStmt,
+    PerformStmt,
+    GenericStmt,
+    Paragraph,
+    Section,
+    CobolProgram,
+)
+
+try:
+    from antlr4 import CommonTokenStream, InputStream
+    from antlr4.tree.Tree import TerminalNode
+
+    from .generated.Cobol85Lexer import Cobol85Lexer
+    from .generated.Cobol85Parser import Cobol85Parser
+
+    _ANTLR_AVAILABLE = True
+
+except ImportError:
+    _ANTLR_AVAILABLE = False
+
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+_ID_DIV_RE = re.compile(r"^\s*(?:IDENTIFICATION|ID)\s+DIVISION\s*\.", re.IGNORECASE)
+_OTHER_DIV_RE = re.compile(r"^\s*(?:ENVIRONMENT|DATA|PROCEDURE)\s+DIVISION\b", re.IGNORECASE)
+_PROGRAM_ID_RE = re.compile(r"^\s*PROGRAM-ID\b", re.IGNORECASE)
+_COMMENT_PARA_RE = re.compile(
+    r"^(\s*(?:AUTHOR|INSTALLATION|DATE-WRITTEN|DATE-COMPILED|SECURITY|REMARKS))\s*\.",
+    re.IGNORECASE,
+)
+
+
+def _blank_comment_entries(lines: list[str]) -> list[str]:
+    """
+    Inside IDENTIFICATION DIVISION only: keep 'AUTHOR.' style headers but drop
+    their free-text comment entries (including continuation lines).
+    Line count is preserved (dropped text becomes an empty line), so line
+    numbers stay identical to the original file.
+    """
+    out: list[str] = []
+    in_id = False
+    in_comment = False
+    for ln in lines:
+        if _ID_DIV_RE.match(ln):
+            in_id, in_comment = True, False
+            out.append(ln)
+            continue
+        if in_id and _OTHER_DIV_RE.match(ln):
+            in_id, in_comment = False, False
+            out.append(ln)
+            continue
+        if not in_id:
+            out.append(ln)
+            continue
+        m = _COMMENT_PARA_RE.match(ln)
+        if m:
+            out.append(m.group(1) + ".")
+            in_comment = True
+            continue
+        if _PROGRAM_ID_RE.match(ln):
+            in_comment = False
+            out.append(ln)
+            continue
+        out.append("" if in_comment else ln)
+    return out
+
+
+def normalize_fixed_format(source_text: str) -> str:
+    """
+    Convert IBM fixed-format COBOL source into free-format text the
+    grammar can parse.
+
+    Column layout (1-indexed, per the IBM COBOL fixed-format spec):
+        1–6    sequence number   (discarded)
+        7      indicator area    ('*' or '/' = comment; '-' = continuation)
+        8–11   Area A
+        12–72  Area B
+        73–80  identification field (discarded)
+
+    One output line is produced per input line (comment lines become an
+    empty line rather than being deleted), so line numbers in the
+    normalized text stay identical to line numbers in the original file —
+    no downstream location remapping is required.
+
+    Known limitation: continuation lines (indicator '-') are passed
+    through as ordinary code rather than joined onto the previous line's
+    literal. This does not affect most declarations/statements but can
+    misparse a string literal split across a continuation.
+    """
+    out_lines: list[str] = []
+    for raw_line in source_text.splitlines():
+        indicator = raw_line[6:7] if len(raw_line) > 6 else " "
+        if indicator in ("*", "/"):
+            out_lines.append("")
+            continue
+        content = raw_line[7:72] if len(raw_line) > 7 else ""
+        out_lines.append(content.rstrip())
+    return "\n".join(_blank_comment_entries(out_lines))
+
+def _loc(ctx, program_id: str, file_path: str) -> SourceLocation:
+    token = ctx.start if hasattr(ctx, "start") and ctx.start else ctx
+
+    line = token.line if hasattr(token, "line") else 0
+    column = token.column if hasattr(token, "column") else 0
+
+    return SourceLocation(
+        program=program_id,
+        file=file_path,
+        line=line,
+        column=column,
+    )
+
+
+def _text(ctx) -> str:
+    if ctx is None:
+        return ""
+
+    if isinstance(ctx, list):
+        return ctx[0].getText() if ctx else ""
+
+    try:
+        return ctx.getText()
+    except Exception:
+        return ""
+
+
+def _name(ctx) -> str:
+    return _text(ctx).upper()
+
+
+def _safe(ctx, attr, *args):
+    """Safely invoke a generated-parser accessor."""
+    try:
+        fn = getattr(ctx, attr, None)
+
+        if fn is None or not callable(fn):
+            return None
+
+        result = fn(*args)
+
+        if isinstance(result, list):
+            return result[0] if result else None
+
+        return result
+
+    except Exception:
+        return None
+
+
+def _all_children(ctx):
+    """Yield all direct children safely."""
+    if ctx is None:
+        return
+
+    try:
+        for i in range(ctx.getChildCount()):
+            child = ctx.getChild(i)
+
+            if child is not None:
+                yield child
+
+    except Exception:
+        return
+
+
+def _collect_identifiers(ctx) -> list[str]:
+    """
+    Recursively collect COBOL-like identifiers.
+
+    The grammar's getText() on composite nodes removes whitespace, so we
+    inspect terminal nodes instead.
+    """
+    names: list[str] = []
+
+    if ctx is None:
+        return names
+
+    try:
+        count = ctx.getChildCount()
+    except Exception:
+        return names
+
+    for i in range(count):
+        child = ctx.getChild(i)
+
+        if child is None:
+            continue
+
+        if isinstance(child, TerminalNode):
+            try:
+                value = child.getText().upper()
+
+                if re.match(r"^[A-Z][A-Z0-9\-]*$", value):
+                    names.append(value)
+
+            except Exception:
+                pass
+
+        else:
+            names.extend(_collect_identifiers(child))
+
+    return names
+
+
+def _extract_exec_operation(raw_text: str, family: str) -> str:
+    """
+    Extract the primary operation from an EXEC block.
+
+    Examples:
+
+        EXEC SQL
+            INSERT INTO CUSTOMER ...
+        END-EXEC
+
+            → INSERT
+
+        EXEC CICS
+            SEND MAP(...)
+        END-EXEC
+
+            → SEND
+
+        EXEC SQL IMS
+            INSERT ...
+        END-EXEC
+
+            → INSERT
+    """
+    text = raw_text.upper()
+
+    text = re.sub(r"\s+", " ", text).strip()
+
+    if family == "SQL_IMS":
+        match = re.search(
+            r"EXEC\s+SQL\s+IMS\s+([A-Z0-9\-]+)",
+            text,
+        )
+
+    elif family == "SQL":
+        match = re.search(
+            r"EXEC\s+SQL\s+([A-Z0-9\-]+)",
+            text,
+        )
+
+    elif family == "CICS":
+        match = re.search(
+            r"EXEC\s+CICS\s+([A-Z0-9\-]+)",
+            text,
+        )
+
+    else:
+        return "UNKNOWN"
+
+    return match.group(1) if match else "UNKNOWN"
+
+
+def _normalise_exec_identifiers(raw_text: str) -> list[str]:
+    """
+    Extract likely COBOL host variables or data references from an EXEC block.
+
+    This is intentionally conservative. Keywords belonging to SQL/CICS/IMS
+    are removed so that the CPG receives mostly COBOL identifiers.
+    """
+    tokens = re.findall(
+        r"\b[A-Z][A-Z0-9\-]*\b",
+        raw_text.upper(),
+    )
+
+    excluded = {
+        # EXEC delimiters
+        "EXEC",
+        "END",
+        "END-EXEC",
+
+        # SQL
+        "SQL",
+        "IMS",
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "MERGE",
+        "INTO",
+        "FROM",
+        "WHERE",
+        "SET",
+        "VALUES",
+        "CALL",
+        "DECLARE",
+        "CURSOR",
+        "OPEN",
+        "CLOSE",
+        "FETCH",
+        "COMMIT",
+        "ROLLBACK",
+
+        # CICS
+        "CICS",
+        "SEND",
+        "RECEIVE",
+        "LINK",
+        "XCTL",
+        "RETURN",
+        "WRITEQ",
+        "READQ",
+        "DELETEQ",
+        "START",
+        "SYNCPOINT",
+
+        # Common clauses
+        "USING",
+        "BY",
+        "REFERENCE",
+        "VALUE",
+        "CONTENT",
+        "LENGTH",
+        "OF",
+        "TO",
+        "ON",
+        "WITH",
+        "IN",
+    }
+
+    result: list[str] = []
+
+    for token in tokens:
+        if token in excluded:
+            continue
+
+        if token not in result:
+            result.append(token)
+
+    return result
+
+
+# ─── Visitor ─────────────────────────────────────────────────────────────────
+
+class _CobolASTVisitor:
+
+    def __init__(self, file_path: str):
+
+        self._file_path = file_path
+
+        self._program_id = os.path.splitext(
+            os.path.basename(file_path)
+        )[0].upper()
+
+        self._data_items: list[DataItem] = []
+        self._sections: list[Section] = []
+        self._paragraphs: list[Paragraph] = []
+        self._copy_stmts: list[CopyStmt] = []
+        self._fd_map: dict[str, str] = {}
+
+        self._current_section = DataSection.UNKNOWN
+
+
+    def build(self, tree) -> CobolProgram:
+
+        self._walk(tree)
+
+        return CobolProgram(
+            file_path=self._file_path,
+            program_id=self._program_id,
+            data_items=self._data_items,
+            sections=self._sections,
+            paragraphs=self._paragraphs,
+            copy_stmts=self._copy_stmts,
+            fd_map=self._fd_map,
+        )
+
+
+    # ─── Tree walker ─────────────────────────────────────────────────────────
+
+    def _walk(self, ctx):
+
+        if ctx is None:
+            return
+
+        name = type(ctx).__name__
+
+        if name == "ProgramIdParagraphContext":
+
+            self._on_program_id(ctx)
+
+        elif name == "WorkingStorageSectionContext":
+
+            previous = self._current_section
+            self._current_section = DataSection.WORKING_STORAGE
+            self._walk_children(ctx)
+            self._current_section = previous
+
+        elif name == "LinkageSectionContext":
+
+            previous = self._current_section
+            self._current_section = DataSection.LINKAGE
+            self._walk_children(ctx)
+            self._current_section = previous
+
+        elif name == "FileSectionContext":
+
+            previous = self._current_section
+            self._current_section = DataSection.FILE
+            self._walk_children(ctx)
+            self._current_section = previous
+
+        elif name == "LocalStorageSectionContext":
+
+            previous = self._current_section
+            self._current_section = DataSection.LOCAL_STORAGE
+            self._walk_children(ctx)
+            self._current_section = previous
+
+        elif name == "DataDescriptionEntryFormat1Context":
+
+            self._on_data_item(ctx)
+
+        elif name == "FileDescriptionEntryContext":
+
+            self._on_fd(ctx)
+
+        elif name == "ParagraphContext":
+
+            self._on_paragraph(ctx)
+
+        elif name == "ProcedureSectionContext":
+
+            self._on_section(ctx)
+
+        else:
+
+            self._walk_children(ctx)
+
+
+    def _walk_children(self, ctx):
+
+        for child in _all_children(ctx):
+            self._walk(child)
+
+
+    # ─── Identification ──────────────────────────────────────────────────────
+
+    def _on_program_id(self, ctx):
+
+        program_name = _safe(ctx, "programName")
+
+        if program_name:
+            self._program_id = _name(program_name)
+
+
+    # ─── Data Division ───────────────────────────────────────────────────────
+
+    def _on_fd(self, ctx):
+
+        file_name = _safe(ctx, "fileName")
+
+        if file_name:
+            name = _name(file_name)
+            self._fd_map[name] = name
+
+        self._walk_children(ctx)
+
+
+    def _on_data_item(self, ctx):
+
+        level = 1
+
+        try:
+            integer_literal = _safe(ctx, "INTEGERLITERAL")
+
+            if integer_literal:
+                level = int(integer_literal.getText())
+
+            else:
+                level_77 = _safe(ctx, "LEVEL_NUMBER_77")
+
+                if level_77:
+                    level = 77
+
+        except Exception:
+            pass
+
+        name = "FILLER"
+
+        try:
+            data_name = _safe(ctx, "dataName")
+
+            if data_name:
+                name = _name(data_name)
+
+        except Exception:
+            pass
+
+        picture = None
+
+        try:
+            clauses = (
+                ctx.dataPictureClause()
+                if hasattr(ctx, "dataPictureClause")
+                else []
+            )
+
+            if clauses:
+
+                clause = (
+                    clauses[0]
+                    if isinstance(clauses, list)
+                    else clauses
+                )
+
+                picture_string = _safe(
+                    clause,
+                    "pictureString",
+                )
+
+                if picture_string:
+                    picture = picture_string.getText().upper()
+
+        except Exception:
+            pass
+
+        redefines = None
+
+        try:
+            clauses = (
+                ctx.dataRedefinesClause()
+                if hasattr(ctx, "dataRedefinesClause")
+                else []
+            )
+
+            if clauses:
+
+                clause = (
+                    clauses[0]
+                    if isinstance(clauses, list)
+                    else clauses
+                )
+
+                data_name = _safe(
+                    clause,
+                    "dataName",
+                )
+
+                if data_name:
+                    redefines = _name(data_name)
+
+        except Exception:
+            pass
+
+        item = DataItem(
+            level=level,
+            name=name,
+            picture=picture,
+            redefines=redefines,
+            section=self._current_section,
+            loc=_loc(
+                ctx,
+                self._program_id,
+                self._file_path,
+            ),
+        )
+
+        self._data_items.append(item)
+
+
+    # ─── Procedure Division ──────────────────────────────────────────────────
+
+    def _on_section(self, ctx):
+
+        header = _safe(
+            ctx,
+            "procedureSectionHeader",
+        )
+
+        name = (
+            _name(_safe(header, "sectionName"))
+            if header
+            else "UNKNOWN"
+        )
+
+        section = Section(
+            name=name,
+            loc=_loc(
+                ctx,
+                self._program_id,
+                self._file_path,
+            ),
+        )
+
+        paragraphs_context = _safe(ctx, "paragraphs")
+
+        if paragraphs_context:
+
+            paragraphs = (
+                paragraphs_context.paragraph()
+                if hasattr(paragraphs_context, "paragraph")
+                else []
+            )
+
+            for paragraph_context in paragraphs:
+                section.paragraphs.append(
+                    self._build_paragraph(
+                        paragraph_context
+                    )
+                )
+
+        self._sections.append(section)
+
+
+    def _on_paragraph(self, ctx):
+
+        self._paragraphs.append(
+            self._build_paragraph(ctx)
+        )
+
+
+    def _build_paragraph(self, ctx) -> Paragraph:
+
+        paragraph_name = _safe(
+            ctx,
+            "paragraphName",
+        )
+
+        name = (
+            _name(paragraph_name)
+            if paragraph_name
+            else "UNKNOWN"
+        )
+
+        paragraph = Paragraph(
+            name=name,
+            loc=_loc(
+                ctx,
+                self._program_id,
+                self._file_path,
+            ),
+        )
+
+        sentences = (
+            ctx.sentence()
+            if hasattr(ctx, "sentence")
+            else []
+        )
+
+        for sentence in sentences:
+
+            statements = (
+                sentence.statement()
+                if hasattr(sentence, "statement")
+                else []
+            )
+
+            for statement_context in statements:
+
+                statement = self._build_stmt(
+                    statement_context
+                )
+
+                if statement is not None:
+                    paragraph.statements.append(
+                        statement
+                    )
+
+        return paragraph
+
+
+    # ─── Statement dispatch ──────────────────────────────────────────────────
+
+    def _build_stmt(self, ctx):
+
+        if ctx is None:
+            return None
+
+        name = type(ctx).__name__
+
+        # Unwrap generic StatementContext.
+        if name == "StatementContext":
+
+            for child in _all_children(ctx):
+
+                if not isinstance(
+                    child,
+                    TerminalNode,
+                ):
+                    return self._build_stmt(child)
+
+            return None
+
+        # ── Ordinary COBOL statements ───────────────────────────────────────
+
+        if name == "MoveStatementContext":
+            return self._build_move(ctx)
+
+        if name == "ComputeStatementContext":
+            return self._build_compute(ctx)
+
+        if name == "CallStatementContext":
+            return self._build_call(ctx)
+
+        if name == "WriteStatementContext":
+            return self._build_write(ctx)
+
+        if name == "ReadStatementContext":
+            return self._build_read(ctx)
+
+        if name == "DisplayStatementContext":
+            return self._build_display(ctx)
+
+        if name == "IfStatementContext":
+            return self._build_if(ctx)
+
+        if name == "PerformStatementContext":
+            return self._build_perform(ctx)
+
+        # ── External constructs ─────────────────────────────────────────────
+        #
+        # Different versions of Cobol85.g4 can use slightly different
+        # generated context names. We therefore recognise both exact names
+        # and broader EXEC-context patterns.
+
+        upper_name = name.upper()
+
+        if "EXECSQLIMS" in upper_name or (
+            "SQLIMS" in upper_name
+        ):
+
+            return self._build_exec_sql_ims(ctx)
+
+        if "EXECSQL" in upper_name or (
+            "SQL" in upper_name
+            and "STATEMENT" in upper_name
+        ):
+
+            return self._build_exec_sql(ctx)
+
+        if "EXECCICS" in upper_name or "CICS" in upper_name:
+
+            return self._build_exec_cics(ctx)
+
+        # ── Fallback ────────────────────────────────────────────────────────
+
+        raw_text = _text(ctx)
+
+        # Important fallback: sometimes the grammar hides an EXEC block
+        # inside a broader context.
+        upper_text = raw_text.upper()
+
+        if "EXEC SQL IMS" in upper_text:
+            return self._build_exec_sql_ims(ctx)
+
+        if "EXEC SQL" in upper_text:
+            return self._build_exec_sql(ctx)
+
+        if "EXEC CICS" in upper_text:
+            return self._build_exec_cics(ctx)
+
+        return GenericStmt(
+            text=raw_text,
+            loc=_loc(
+                ctx,
+                self._program_id,
+                self._file_path,
+            ),
+        )
+
+
+    # ─── Ordinary statement builders ─────────────────────────────────────────
+
+    def _build_move(self, ctx) -> MoveStmt | GenericStmt:
+
+        loc = _loc(
+            ctx,
+            self._program_id,
+            self._file_path,
+        )
+
+        try:
+
+            move_to = _safe(
+                ctx,
+                "moveToStatement",
+            )
+
+            if move_to:
+
+                source_context = _safe(
+                    move_to,
+                    "moveToSendingArea",
+                )
+
+                source = (
+                    _name(source_context)
+                    if source_context
+                    else ""
+                )
+
+                destinations = [
+                    _name(destination)
+                    for destination in (
+                        move_to.identifier()
+                        if hasattr(
+                            move_to,
+                            "identifier",
+                        )
+                        else []
+                    )
+                ]
+
+                return MoveStmt(
+                    source=source,
+                    destinations=destinations,
+                    loc=loc,
+                )
+
+            move_corresponding = _safe(
+                ctx,
+                "moveCorrespondingToStatement",
+            )
+
+            if move_corresponding:
+
+                source_context = _safe(
+                    move_corresponding,
+                    "moveCorrespondingToSendingArea",
+                )
+
+                source = (
+                    _name(source_context)
+                    if source_context
+                    else ""
+                )
+
+                destinations = [
+                    _name(destination)
+                    for destination in (
+                        move_corresponding.identifier()
+                        if hasattr(
+                            move_corresponding,
+                            "identifier",
+                        )
+                        else []
+                    )
+                ]
+
+                return MoveStmt(
+                    source=source,
+                    destinations=destinations,
+                    is_group_move=True,
+                    loc=loc,
+                )
+
+        except Exception:
+            pass
+
+        return GenericStmt(
+            text=_text(ctx),
+            loc=loc,
+        )
+
+
+    def _build_compute(self, ctx) -> ComputeStmt | GenericStmt:
+
+        loc = _loc(
+            ctx,
+            self._program_id,
+            self._file_path,
+        )
+
+        try:
+
+            stores = (
+                ctx.computeStore()
+                if hasattr(ctx, "computeStore")
+                else []
+            )
+
+            destination = (
+                _name(stores[0])
+                if stores
+                else ""
+            )
+
+            arithmetic_expression = _safe(
+                ctx,
+                "arithmeticExpression",
+            )
+
+            operands = (
+                _collect_identifiers(
+                    arithmetic_expression
+                )
+                if arithmetic_expression
+                else []
+            )
+
+            return ComputeStmt(
+                destination=destination,
+                operands=operands,
+                loc=loc,
+            )
+
+        except Exception:
+
+            return GenericStmt(
+                text=_text(ctx),
+                loc=loc,
+            )
+
+
+    def _build_call(self, ctx) -> CallStmt | GenericStmt:
+
+        loc = _loc(
+            ctx,
+            self._program_id,
+            self._file_path,
+        )
+
+        try:
+
+            literal = _safe(ctx, "literal")
+            identifier = _safe(ctx, "identifier")
+
+            target_is_literal = literal is not None
+
+            target_context = literal or identifier
+
+            target = (
+                _name(target_context).strip("'\"")
+                if target_context
+                else "UNKNOWN"
+            )
+
+            using_params: list[str] = []
+
+            call_using_phrase = _safe(
+                ctx,
+                "callUsingPhrase",
+            )
+
+            if call_using_phrase:
+
+                parameters = (
+                    call_using_phrase.callUsingParameter()
+                    if hasattr(
+                        call_using_phrase,
+                        "callUsingParameter",
+                    )
+                    else []
+                )
+
+                ignored = {
+                    "BY",
+                    "REFERENCE",
+                    "VALUE",
+                    "CONTENT",
+                    "ADDRESS",
+                    "OF",
+                    "LENGTH",
+                    "USING",
+                }
+
+                for parameter in parameters:
+
+                    for identifier_name in _collect_identifiers(
+                        parameter
+                    ):
+
+                        if identifier_name not in ignored:
+
+                            if identifier_name not in using_params:
+                                using_params.append(
+                                    identifier_name
+                                )
+
+            return CallStmt(
+                target=target,
+                target_is_literal=target_is_literal,
+                using_params=using_params,
+                loc=loc,
+            )
+
+        except Exception:
+
+            return GenericStmt(
+                text=_text(ctx),
+                loc=loc,
+            )
+
+
+    def _build_write(self, ctx) -> WriteStmt | GenericStmt:
+
+        loc = _loc(
+            ctx,
+            self._program_id,
+            self._file_path,
+        )
+
+        try:
+
+            record_name_context = _safe(
+                ctx,
+                "recordName",
+            )
+
+            record_name = (
+                _name(record_name_context)
+                if record_name_context
+                else ""
+            )
+
+            from_field = None
+
+            write_from_phrase = _safe(
+                ctx,
+                "writeFromPhrase",
+            )
+
+            if write_from_phrase:
+
+                identifier = _safe(
+                    write_from_phrase,
+                    "identifier",
+                )
+
+                literal = _safe(
+                    write_from_phrase,
+                    "literal",
+                )
+
+                source_context = identifier or literal
+
+                if source_context:
+                    from_field = _name(
+                        source_context
+                    )
+
+            return WriteStmt(
+                record_name=record_name,
+                from_field=from_field,
+                loc=loc,
+            )
+
+        except Exception:
+
+            return GenericStmt(
+                text=_text(ctx),
+                loc=loc,
+            )
+
+
+    def _build_read(self, ctx) -> ReadStmt | GenericStmt:
+
+        loc = _loc(
+            ctx,
+            self._program_id,
+            self._file_path,
+        )
+
+        try:
+
+            file_name_context = _safe(
+                ctx,
+                "fileName",
+            )
+
+            file_name = (
+                _name(file_name_context)
+                if file_name_context
+                else ""
+            )
+
+            into_field = None
+
+            for attribute in (
+                "readInto",
+                "readIntoPhrase",
+            ):
+
+                read_into = _safe(
+                    ctx,
+                    attribute,
+                )
+
+                if read_into:
+
+                    identifier = _safe(
+                        read_into,
+                        "identifier",
+                    )
+
+                    if identifier:
+                        into_field = _name(
+                            identifier
+                        )
+
+                    break
+
+            return ReadStmt(
+                file_name=file_name,
+                into_field=into_field,
+                loc=loc,
+            )
+
+        except Exception:
+
+            return GenericStmt(
+                text=_text(ctx),
+                loc=loc,
+            )
+
+
+    def _build_display(self, ctx) -> DisplayStmt | GenericStmt:
+
+        loc = _loc(
+            ctx,
+            self._program_id,
+            self._file_path,
+        )
+
+        try:
+
+            operands: list[str] = []
+
+            display_operands = (
+                ctx.displayOperand()
+                if hasattr(
+                    ctx,
+                    "displayOperand",
+                )
+                else []
+            )
+
+            for operand in display_operands:
+
+                identifier = _safe(
+                    operand,
+                    "identifier",
+                )
+
+                literal = _safe(
+                    operand,
+                    "literal",
+                )
+
+                value_context = identifier or literal
+
+                value = (
+                    _name(value_context)
+                    if value_context
+                    else _text(operand).upper()
+                )
+
+                if value:
+                    operands.append(value)
+
+            # Try to preserve UPON destination.
+            raw_text = _text(ctx).upper()
+
+            upon = None
+
+            match = re.search(
+                r"\bUPON\s+([A-Z0-9\-]+)",
+                raw_text,
+            )
+
+            if match:
+                upon = match.group(1)
+
+            return DisplayStmt(
+                operands=operands,
+                upon=upon,
+                loc=loc,
+            )
+
+        except Exception:
+
+            return GenericStmt(
+                text=_text(ctx),
+                loc=loc,
+            )
+
+
+    # ─── EXEC builders ───────────────────────────────────────────────────────
+
+    def _build_exec_sql(self, ctx) -> ExecSqlStmt:
+
+        raw_text = _text(ctx)
+
+        return ExecSqlStmt(
+            operation=_extract_exec_operation(
+                raw_text,
+                "SQL",
+            ),
+            operands=_normalise_exec_identifiers(
+                raw_text
+            ),
+            raw_text=raw_text,
+            loc=_loc(
+                ctx,
+                self._program_id,
+                self._file_path,
+            ),
+        )
+
+
+    def _build_exec_cics(self, ctx) -> ExecCicsStmt:
+
+        raw_text = _text(ctx)
+
+        return ExecCicsStmt(
+            operation=_extract_exec_operation(
+                raw_text,
+                "CICS",
+            ),
+            operands=_normalise_exec_identifiers(
+                raw_text
+            ),
+            raw_text=raw_text,
+            loc=_loc(
+                ctx,
+                self._program_id,
+                self._file_path,
+            ),
+        )
+
+
+    def _build_exec_sql_ims(self, ctx) -> ExecSqlImsStmt:
+
+        raw_text = _text(ctx)
+
+        return ExecSqlImsStmt(
+            operation=_extract_exec_operation(
+                raw_text,
+                "SQL_IMS",
+            ),
+            operands=_normalise_exec_identifiers(
+                raw_text
+            ),
+            raw_text=raw_text,
+            loc=_loc(
+                ctx,
+                self._program_id,
+                self._file_path,
+            ),
+        )
+
+
+    # ─── Control-flow statements ─────────────────────────────────────────────
+
+    def _build_if(self, ctx) -> IfStmt:
+
+        loc = _loc(
+            ctx,
+            self._program_id,
+            self._file_path,
+        )
+
+        condition_text = ""
+
+        try:
+
+            condition = _safe(
+                ctx,
+                "condition",
+            )
+
+            if condition:
+                condition_text = _text(condition)
+
+        except Exception:
+            pass
+
+        then_statements = []
+        else_statements = []
+
+        try:
+
+            if_then = _safe(
+                ctx,
+                "ifThen",
+            )
+
+            if if_then:
+
+                statements = (
+                    if_then.statement()
+                    if hasattr(if_then, "statement")
+                    else []
+                )
+
+                for statement_context in statements:
+
+                    statement = self._build_stmt(
+                        statement_context
+                    )
+
+                    if statement:
+                        then_statements.append(
+                            statement
+                        )
+
+            if_else = _safe(
+                ctx,
+                "ifElse",
+            )
+
+            if if_else:
+
+                statements = (
+                    if_else.statement()
+                    if hasattr(if_else, "statement")
+                    else []
+                )
+
+                for statement_context in statements:
+
+                    statement = self._build_stmt(
+                        statement_context
+                    )
+
+                    if statement:
+                        else_statements.append(
+                            statement
+                        )
+
+        except Exception:
+            pass
+
+        return IfStmt(
+            condition_text=condition_text,
+            then_stmts=then_statements,
+            else_stmts=else_statements,
+            loc=loc,
+        )
+
+
+    def _build_perform(self, ctx) -> PerformStmt | GenericStmt:
+
+        loc = _loc(
+            ctx,
+            self._program_id,
+            self._file_path,
+        )
+
+        try:
+
+            perform_procedure = _safe(
+                ctx,
+                "performProcedureStatement",
+            )
+
+            if perform_procedure:
+
+                procedure_name = (
+                    perform_procedure.procedureName(0)
+                    if hasattr(
+                        perform_procedure,
+                        "procedureName",
+                    )
+                    else None
+                )
+
+                return PerformStmt(
+                    target=(
+                        _name(procedure_name)
+                        if procedure_name
+                        else None
+                    ),
+                    is_inline=False,
+                    loc=loc,
+                )
+
+            perform_inline = _safe(
+                ctx,
+                "performInlineStatement",
+            )
+
+            if perform_inline:
+
+                statements = (
+                    perform_inline.statement()
+                    if hasattr(
+                        perform_inline,
+                        "statement",
+                    )
+                    else []
+                )
+
+                body = [
+                    self._build_stmt(
+                        statement_context
+                    )
+                    for statement_context in statements
+                ]
+
+                return PerformStmt(
+                    target=None,
+                    is_inline=True,
+                    body_stmts=[
+                        statement
+                        for statement in body
+                        if statement
+                    ],
+                    loc=loc,
+                )
+
+        except Exception:
+            pass
+
+        return GenericStmt(
+            text=_text(ctx),
+            loc=loc,
+        )
+
+
+# ─── Public API ───────────────────────────────────────────────────────────────
+
+def build_ast(
+    source_text: str,
+    file_path: str,
+) -> CobolProgram:
+
+    if not _ANTLR_AVAILABLE:
+
+        raise ImportError(
+            "ANTLR4 generated parser files not found.\n"
+            "Run: ./scripts/generate_parser.sh"
+        )
+
+    input_stream = InputStream(source_text)
+
+    lexer = Cobol85Lexer(input_stream)
+
+    token_stream = CommonTokenStream(
+        lexer
+    )
+
+    parser = Cobol85Parser(
+        token_stream
+    )
+
+    tree = parser.startRule()
+
+    visitor = _CobolASTVisitor(
+        file_path
+    )
+
+    return visitor.build(tree)
